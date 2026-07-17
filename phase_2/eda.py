@@ -7,7 +7,7 @@ from matplotlib.colors import ListedColormap, LogNorm
 from matplotlib.patches import Patch
 from sklearn.decomposition import PCA
 
-from config import SAVED_FIGS_DIR, BENIGN_LABEL, RANDOM_SEED, EDA_SUMMARY_FILE
+from config import SAVED_FIGS_DIR, BENIGN_LABEL, RANDOM_SEED, RESULTS_FILE
 
 
 def _benign_cmap():
@@ -223,7 +223,7 @@ def visualise_top_mean_diff_features(x_features, labels, top_n=15, save_name='to
     return top
 
 
-def write_eda_summary(counts, pca, distances, labels, top_features, path=EDA_SUMMARY_FILE):
+def write_eda_summary(counts, pca, distances, labels, top_features, path=RESULTS_FILE):
     is_attack = labels != BENIGN_LABEL
     explained = pca.explained_variance_ratio_
     with open(path, 'w') as f:
@@ -237,7 +237,7 @@ def write_eda_summary(counts, pca, distances, labels, top_features, path=EDA_SUM
         f.write('\nTop mean-diff features:\n')
         f.write(top_features.to_string())
         f.write('\n')
-    print(f'Wrote summary to {path}')
+    print(f'Wrote EDA summary to {path}')
     return
 
 

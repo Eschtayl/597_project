@@ -28,3 +28,40 @@ min_et                  0.241782
 stream_jitter_10_sum    0.223145
 channel_1_count         0.222390
 q1_p                    0.215304
+
+### PHASE 2 — Isolation Forest ###
+
+Threshold: 0.0048122189054838616
+Precision: 0.0710
+Recall: 0.3363
+F1: 0.1173
+FPR: 0.1099
+FNR: 0.6637
+AUC-ROC: 0.7523
+Confusion matrix [tn, fp, fn, tp]: [44507, 5493, 829, 420]
+
+Per-attack detection rate:
+  DDOS-HTTP_flood: 0.3404
+  DNS_spoofing: 0.1923
+  DoS-HTTP: 0.6833
+  XSS: 0.2522
+  brute_force: 0.1685
+
+### PHASE 2 — Autoencoder ###
+
+Threshold: 0.07596293091773987
+Precision: 0.5120
+Recall: 0.4341
+F1: 0.4698
+FPR: 0.0098
+FNR: 0.5659
+AUC-ROC: 0.9143
+Confusion matrix [tn, fp, fn, tp]: [49510, 490, 670, 514]
+
+Per-attack detection rate:
+  DDOS-HTTP_flood: 0.8057
+  DNS_spoofing: 0.2117
+  DoS-HTTP: 0.9028
+  XSS: 0.0253
+  brute_force: 0.1688
+

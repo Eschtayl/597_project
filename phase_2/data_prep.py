@@ -1,9 +1,14 @@
+import numpy as np
+from sklearn.metrics import f1_score
+from sklearn.model_selection import train_test_split
+
 from config import (
     PACKET_PATH,
     LABEL_COL,
     BENIGN_LABEL,
     IDENTIFIER_KEYWORDS,
     RANDOM_SEED,
+    TEST_SIZE,
 )
 from helpers import (
     load_csv,
@@ -41,3 +46,41 @@ def split_features_and_labels(df_preprocessed, label_col=LABEL_COL):
     # Binary ground truth for evaluation only (not used in unsupervised training)
     y_true = (labels != BENIGN_LABEL).astype(int)
     return x_features, labels, y_true, identifier_cols
+
+
+def split_train_test(x_features, labels, y_true, test_size=TEST_SIZE, seed=RANDOM_SEED):
+    # Stratified split so attack rate is similar in train and test
+    x_train, x_test, labels_train, labels_test, y_train, y_test = train_test_split(
+        x_features,
+        labels,
+        y_true,
+        test_size=test_size,
+        random_state=seed,
+        stratify=y_true,
+    )
+    return x_train, x_test, labels_train, labels_test, y_train, y_test
+
+
+def choose_threshold(anomaly_scores, y_true, n_candidates=200):
+    # Pick threshold on train scores by max F1 (labels used only for threshold selection)
+    y_true = np.asarray(y_true)
+    scores = np.asarray(anomaly_scores)
+    lo, hi = np.percentile(scores, 1), np.percentile(scores, 99)
+    candidates = np.linspace(lo, hi, n_candidates)
+
+    best_threshold = candidates[0]
+    best_f1 = -1.0
+    for threshold in candidates:
+        y_pred = (scores >= threshold).astype(int)
+        f1 = f1_score(y_true, y_pred, zero_division=0)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_threshold = threshold
+
+    print(f'Threshold chosen by max F1 on train: {best_threshold:.6f} (F1={best_f1:.4f})')
+    return float(best_threshold)
+
+
+def generate_alerts(anomaly_scores, threshold):
+    # Flag rows at or above threshold as anomalous (1)
+    return (np.asarray(anomaly_scores) >= threshold).astype(int)

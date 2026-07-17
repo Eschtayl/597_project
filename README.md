@@ -8,11 +8,12 @@ The folders must be in the project root next to helpers.py and PreprocessingPipe
 
 ## Phase 2
 All Phase 2 code lives in `phase_2/`:
-- `config.py` — paths, seeds
-- `anomaly.py` — packet load / preprocess helpers
-- `evaluation.py` — shared figure helpers
+- `config.py` — paths, seeds, model settings
+- `data_prep.py` — packet prep, train/test split, threshold, alerts
+- `models/isolation_forest.py` — Isolation Forest
+- `models/autoencoder.py` — autoencoder
+- `evaluation.py` — metrics and plots
 - `eda.py` — EDA plots
-- `main_eda.py` — run EDA
 - `main.py` — Phase 2 entry point
 - `saved_figs/` — figures
 
@@ -20,13 +21,17 @@ All Phase 2 code lives in `phase_2/`:
 source .venv/bin/activate
 pip install -r requirements.txt
 cd phase_2
-python main_eda.py
-python main.py
+python main.py eda
+python main.py if
+python main.py ae
+python main.py all
 ```
 
 Or from the project root:
 
 ```bash
-python phase_2/main_eda.py
-python phase_2/main.py
+python phase_2/main.py eda
+python phase_2/main.py if
+python phase_2/main.py ae
+python phase_2/main.py all
 ```
