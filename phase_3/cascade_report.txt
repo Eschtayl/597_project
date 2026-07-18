@@ -1,0 +1,50 @@
+=== Cascade bake-off on Phase 2 VALIDATION alerts (n=4,848; TP=351, FP=4497; retention floor 95%) ===
+           head policy      tau  fp_reduction  tp_retention  usable_frac  feasible
+   s_mc_service      B 0.016597      0.598177      0.951567     0.690594      True
+  s_bin_service      B 0.015140      0.585946      0.951567     0.690594      True
+ s_mc_behaviour      B 0.013465      0.582833      0.951567     0.690594      True
+s_bin_behaviour      B 0.010608      0.563264      0.951567     0.690594      True
+   s_mc_service      A 0.016597      0.489437      0.951567     0.536097      True
+ s_mc_behaviour      A 0.013465      0.477652      0.951567     0.536097      True
+  s_bin_service      A 0.015140      0.476985      0.951567     0.536097      True
+s_bin_behaviour      A 0.010608      0.461196      0.951567     0.536097      True
+
+FROZEN config: head=s_mc_service policy=B tau=0.016597 (val FP-reduction 59.8% @ TP-retention 95.2%)
+
+=== SEALED TEST evaluation (frozen config, single run) ===
+Test alerts: 5,033 (TP=354, FP=4,679; Phase 2 missed FN=546)
+  FP-reduction:            59.6%   (val: 59.8%)
+  TP-retention:            92.7%   (val: 95.2%)
+  alert-volume reduction:  56.0%
+  precision: phase2 0.070 -> cascade 0.148
+  recall:    phase2 0.393 -> cascade 0.364 (ceiling = phase2 recall)
+  bootstrap 95% CI  FP-reduction 58.1%..61.1%  TP-retention 89.8%..95.2%
+  McNemar (phase2 vs cascade): suppressed benign c=2790, suppressed attack b=26, chi2=2711.0, p=0.00e+00
+
+Per-class alert retention (test):
+          label  alerts  kept  retention
+DDOS-HTTP_flood      76    76   1.000000
+   DNS_spoofing      54    37   0.685185
+       DoS-HTTP     127   124   0.976378
+            XSS      45    43   0.955556
+         benign    4679  1889   0.403719
+    brute_force      52    48   0.923077
+
+FP-reduction by benign-alert port slice (contradiction risk, test):
+  service_port  fp_alerts=2,755  fp_reduction=76.0%
+  ambient       fp_alerts=1,924  fp_reduction=36.2%
+
+Conditional on usable mapping (test):
+  usable alerts=3,440 (68.3%)  FP-reduction=89.1%  TP-retention=91.5%
+  fallback-retained alerts=1,593 (TP=47, FP=1546)
+
+Flow-level summary (decision flows, test):
+  flows consulted=2,830  attack flows kept=265/288  benign flows suppressed=2341/2542
+
+Saved results -> C:\Users\Vansh Vekaria\Desktop\UVic Study\Term 3\ECE 592B\597Preprocessing\phase_3\data\cascade_results.json
+
+=== Cascade checkpoint verifications ===
+  [PASS] threshold chosen on val alerts only (test untouched during sweep)
+  [PASS] cascade only removes alerts (suppression needs a usable score)
+  [PASS] retention floor met on val
+  [PASS] recall_cascade <= recall_phase2 (ceiling respected)

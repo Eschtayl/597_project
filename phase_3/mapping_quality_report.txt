@@ -1,0 +1,66 @@
+=== Packet -> Logical-Flow Mapping Quality Report ===
+Captures (7): BenignTraffic.pcap_Flow.csv, BenignTraffic1.pcap_Flow.csv, DNS_Spoofing.pcap_Flow.csv, XSS.pcap_Flow.csv, DDoS-HTTP_Flood-.pcap_Flow.csv, DictionaryBruteForce.pcap_Flow.csv, DoS-HTTP_Flood.pcap_Flow.csv
+Packets sampled per capture: 60,000 (head sample — representative diagnostic)
+
+Building flow-side canonical-key index (full flow files)...
+  logical flows indexed -> unique canonical keys: 758,492 -> 636,110
+  keys with >1 candidate: 88,173 (13.9%)
+
+Total packets considered: 400,101
+
+Mapping status breakdown:
+  unique_match                   173,518  (43.37%)
+  multiple_same_label             27,579  ( 6.89%)
+  multiple_same_capture          149,802  (37.44%)
+  multiple_conflicting_labels      5,253  ( 1.31%)
+  no_match                        18,858  ( 4.71%)
+  invalid_key                     25,091  ( 6.27%)
+
+Match status by class group:
+  attack   unique:37.6%  multi_lbl: 0.0%  multi_cap:48.0%  conflict: 1.4%  no_match: 6.6%  invalid: 6.3%
+  benign   unique:56.8%  multi_lbl:23.0%  multi_cap:12.7%  conflict: 1.1%  no_match: 0.2%  invalid: 6.2%
+
+Exact unique-match rate by label (attack type):
+  DDOS-HTTP_flood    n= 60,000  unique= 47.5%  no_match=  0.1%  invalid=  1.1%
+  DNS_spoofing       n= 60,000  unique= 36.0%  no_match=  0.1%  invalid=  9.0%
+  DoS-HTTP           n= 60,000  unique=  9.0%  no_match=  0.0%  invalid=  1.0%
+  XSS                n= 40,101  unique= 35.9%  no_match=  0.6%  invalid= 13.9%
+  benign             n=120,000  unique= 56.8%  no_match=  0.2%  invalid=  6.2%
+  brute_force        n= 60,000  unique= 59.1%  no_match= 30.4%  invalid=  9.0%
+
+Unique packets mapping to each logical flow (unique matches):
+  logical flows hit: 13,909   packets: 173,518
+  per-flow packet count  min=1  median=4  mean=12.5  p95=28  max=8505
+
+Candidate-flow count per packet (0 = no_match / invalid):
+    0 candidates:    43,949  (10.98%)
+    1 candidates:   173,518  (43.37%)
+    2 candidates:    96,825  (24.20%)
+    3 candidates:    46,331  (11.58%)
+    4 candidates:     7,734  ( 1.93%)
+   5+ candidates:    31,744  ( 7.93%)
+
+Examples per category (canonical_key | #cand | #labels | #captures):
+  unique_match:
+    192.168.137.175:56891||99.81.244.93:443||6             cand=1.0 labels=1 captures=1
+    192.168.137.175:56891||99.81.244.93:443||6             cand=1.0 labels=1 captures=1
+  multiple_same_label:
+    192.168.137.90:37020||239.255.255.250:37000||17        cand=2.0 labels=1 captures=2
+    192.168.137.82:49236||255.255.255.255:6667||17         cand=2.0 labels=1 captures=2
+  multiple_same_capture:
+    192.168.137.46:48335||35.185.101.66:443||6             cand=2.0 labels=1 captures=1
+    157.249.81.141:443||192.168.137.41:50093||6            cand=2.0 labels=1 captures=1
+  multiple_conflicting_labels:
+    192.168.137.61:5353||224.0.0.251:5353||17              cand=5.0 labels=2 captures=3
+    192.168.137.210:5353||224.0.0.251:5353||17             cand=6.0 labels=2 captures=3
+  no_match:
+    111.235.248.121:123||192.168.137.133:48844||17         cand=nan labels=nan captures=nan
+    111.235.248.121:123||192.168.137.133:52229||17         cand=nan labels=nan captures=nan
+  invalid_key:
+    nan                                                    cand=nan labels=nan captures=nan
+    nan                                                    cand=nan labels=nan captures=nan
+
+Verifications:
+  [PASS] reversing src/dst yields identical canonical key
+  [PASS] protocol is part of the key (same endpoints, TCP vs UDP -> different key)
+  [PASS] label/model never resolves ambiguity (unique matches + chosen flow invariant to shuffled labels)

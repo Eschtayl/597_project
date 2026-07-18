@@ -1,0 +1,50 @@
+Building FULL unified-flow frame (all captures — several minutes)...
+  built 986,044 unified flows -> cached C:\Users\Vansh Vekaria\Desktop\UVic Study\Term 3\ECE 592B\597Preprocessing\phase_3\data\unified_flows_full.parquet
+  flow key index: 983,336 keyable flows -> 790,207 canonical keys (137,609 keys with >1 candidate)
+
+Phase 2 alert packets: val=4,848 test=5,033
+
+Mapping coverage — Phase 2 val alerts (n=4,848):
+  unique_match                  2,599  (53.61%)
+  multiple_same_label             975  (20.11%)
+  multiple_same_capture           749  (15.45%)
+  invalid_key                     297  ( 6.13%)
+  multiple_conflicting_labels     165  ( 3.40%)
+  no_match                         63  ( 1.30%)
+    invalid_key/zero_port                 155
+    invalid_key/missing_endpoint          142
+  per-label unique/no_match rates:
+    DDOS-HTTP_flood    n=   75  unique= 78.7%  no_match=  0.0%  usable(A|B)= 98.7%
+    DNS_spoofing       n=   61  unique= 55.7%  no_match=  0.0%  usable(A|B)= 98.4%
+    DoS-HTTP           n=  118  unique= 28.0%  no_match=  0.0%  usable(A|B)= 89.8%
+    XSS                n=   57  unique= 43.9%  no_match=  3.5%  usable(A|B)= 87.7%
+    benign             n=4,497  unique= 54.0%  no_match=  1.1%  usable(A|B)= 67.5%
+    brute_force        n=   40  unique= 52.5%  no_match= 32.5%  usable(A|B)= 52.5%
+
+Mapping coverage — Phase 2 test alerts (n=5,033):
+  unique_match                  2,654  (52.73%)
+  multiple_same_label           1,053  (20.92%)
+  multiple_same_capture           786  (15.62%)
+  invalid_key                     306  ( 6.08%)
+  multiple_conflicting_labels     163  ( 3.24%)
+  no_match                         71  ( 1.41%)
+    invalid_key/zero_port                 179
+    invalid_key/missing_endpoint          127
+  per-label unique/no_match rates:
+    DDOS-HTTP_flood    n=   76  unique= 60.5%  no_match=  0.0%  usable(A|B)= 98.7%
+    DNS_spoofing       n=   54  unique= 72.2%  no_match=  0.0%  usable(A|B)= 98.1%
+    DoS-HTTP           n=  127  unique= 33.1%  no_match=  0.0%  usable(A|B)= 87.4%
+    XSS                n=   45  unique= 44.4%  no_match=  0.0%  usable(A|B)= 86.7%
+    benign             n=4,679  unique= 53.0%  no_match=  1.2%  usable(A|B)= 67.0%
+    brute_force        n=   52  unique= 55.8%  no_match= 28.8%  usable(A|B)= 55.8%
+
+Saved alignment -> C:\Users\Vansh Vekaria\Desktop\UVic Study\Term 3\ECE 592B\597Preprocessing\phase_3\data\cascade_alignment.parquet
+
+=== Leakage guard (cascade candidates vs Phase 3 sample) ===
+candidate flows reachable from val alerts:  6,247
+candidate flows reachable from test alerts: 6,426
+  [FAIL] cascade_val_x_train = 2,713 overlapping flows
+  [FAIL] cascade_test_x_train = 2,742 overlapping flows
+  [FAIL] cascade_test_x_val = 618 overlapping flows
+Guard FAILED (expected — samples were independent). Next: remove candidate flows from Phase 3 training, resample replacements, retrain heads with locked params (cascade_heads.py).
+Saved guard verdict -> C:\Users\Vansh Vekaria\Desktop\UVic Study\Term 3\ECE 592B\597Preprocessing\phase_3\data\cascade_leakage.json

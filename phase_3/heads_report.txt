@@ -1,0 +1,29 @@
+Sample: 204,075 flows. Val: 30,612. Test sealed: 30,612 (not scored).
+Locked unweighted params: behaviour={'max_depth': 7, 'learning_rate': 0.1, 'min_child_weight': 5, 'subsample': 0.9, 'colsample_bytree': 1.0, 'reg_lambda': 1, 'reg_alpha': 0.0}
+                          service={'max_depth': 7, 'learning_rate': 0.1, 'min_child_weight': 5, 'subsample': 0.9, 'colsample_bytree': 1.0, 'reg_lambda': 1, 'reg_alpha': 0.0}
+
+--- MC [behaviour] standalone (val) ---  n_trees=171
+  macroF1=0.6960 bal_acc=0.6157 binary_PR_AUC=0.7519 attack_precision=0.9677 attack_recall=0.5892
+
+--- BIN [behaviour] standalone (val) ---  n_trees=293
+  attack_precision=0.9443 attack_recall=0.6105 binary_PR_AUC=0.7535 binary_ROC_AUC=0.9529
+
+--- MC [service] standalone (val) ---  n_trees=171
+  macroF1=0.7020 bal_acc=0.6280 binary_PR_AUC=0.7573 attack_precision=0.9687 attack_recall=0.6072
+
+--- BIN [service] standalone (val) ---  n_trees=291
+  attack_precision=0.9719 attack_recall=0.6219 binary_PR_AUC=0.7606 binary_ROC_AUC=0.9524
+
+=== Standalone head summary (validation view 1) ===
+               n_trees  macro_f1  binary_pr_auc
+mc_behaviour     171.0     0.696         0.7519
+bin_behaviour    293.0       NaN         0.7535
+mc_service       171.0     0.702         0.7573
+bin_service      291.0       NaN         0.7606
+
+=== Head checkpoint verifications ===
+  [PASS] four heads trained + saved
+  [PASS] val scores saved for all 4 heads
+  [PASS] test split never scored (val-only here)
+  [PASS] no class weighting used
+  [PASS] MC score = 1 - P(benign); BIN score = P(attack)

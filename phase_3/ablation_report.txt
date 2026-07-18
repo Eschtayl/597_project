@@ -1,0 +1,23 @@
+=== Engineered-feature / service ablation (XGB MC, locked unweighted params; validation only) ===
+  xgb_behaviour_no_engineered  macroF1=0.7074  PR-AUC=0.7559  attackP=0.9656  attackR=0.5974  trees=180
+  xgb_behaviour                macroF1=0.6960  PR-AUC=0.7519  attackP=0.9677  attackR=0.5892  trees=171
+  xgb_service                  macroF1=0.7020  PR-AUC=0.7573  attackP=0.9687  attackR=0.6072  trees=171
+
+=== Model progression ladder (validation; cascade row = sealed test) ===
+                                      stage  macro_f1  binary_pr_auc  fp_reduction  tp_retention precision_gain
+            Dummy-most_frequent [behaviour]  0.164987       0.019959           NaN           NaN            NaN
+               Dummy-stratified [behaviour]  0.167514       0.020077           NaN           NaN            NaN
+                             LR [behaviour]  0.281587       0.346304           NaN           NaN            NaN
+                               LR [service]  0.321600       0.387647           NaN           NaN            NaN
+                             RF [behaviour]  0.638021       0.708951           NaN           NaN            NaN
+                               RF [service]  0.653302       0.724412           NaN           NaN            NaN
+                xgb_behaviour_no_engineered  0.707374       0.755850           NaN           NaN            NaN
+                              xgb_behaviour  0.696038       0.751869           NaN           NaN            NaN
+                                xgb_service  0.702042       0.757341           NaN           NaN            NaN
+final cascade (test): s_mc_service policy B       NaN            NaN      0.596281      0.926554   0.070->0.148
+
+Computational overhead (frozen head MC-service, 10,748 candidate flows):
+  preprocess: 25 ms   predict: 20 ms   total 4.1 us/flow
+  Phase 3 adds one flow lookup + one XGBoost inference per Phase 2 alert (O(trees x depth) per flow, trees=173); training is offline. Two-phase complexity = Phase 2 IF O(t_IF x log n) per packet + Phase 3 O(t_XGB x d) per alerted flow only.
+
+Saved -> C:\Users\Vansh Vekaria\Desktop\UVic Study\Term 3\ECE 592B\597Preprocessing\phase_3\data\ablation_results.json

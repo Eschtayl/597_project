@@ -1,0 +1,132 @@
+Loaded sample: 204,075 flows
+Train rows: 142,851   Val rows: 30,612   (test sealed: 30,612 rows, not read by eval)
+
+Brute Force diagnostic prevalence (frozen thresholds; diagnostic only):
+           group      n short_flow low_response syn_dominant repetition_extreme attack_like
+    Benign train 139998      25.0%        13.1%        74.8%               1.6%        0.6%
+BruteForce train    570      43.2%        15.1%        84.0%               0.0%        0.0%
+  BruteForce val    123      34.1%        14.6%        83.7%               0.0%        0.0%
+ BruteForce test    122      45.1%        19.7%        82.0%               0.0%        0.0%
+
+Validation class support:
+DDOS-HTTP_flood      122
+DNS_spoofing         122
+DoS-HTTP             122
+XSS                  122
+benign             30001
+brute_force          123
+
+--- Dummy-most_frequent [behaviour] ---
+  acc(context)=0.9800  bal_acc=0.1667  macroF1=0.1650  weightedF1=0.9702
+  macroP=0.1633  macroR=0.1667  roc_auc_ovr=0.5000  pr_auc_ovr=0.1667
+  binary: attack_recall=0.0000  attack_precision=0.0000  binary_PR_AUC=0.0200  binary_ROC_AUC=0.5000
+  timings: train=0.03s  val_infer=0.00s
+  per-class (val):
+                     precision  recall      f1  support
+    DDOS-HTTP_flood       0.00     0.0  0.0000      122
+    DNS_spoofing          0.00     0.0  0.0000      122
+    DoS-HTTP              0.00     0.0  0.0000      122
+    XSS                   0.00     0.0  0.0000      122
+    benign                0.98     1.0  0.9899    30001
+    brute_force           0.00     0.0  0.0000      123
+
+--- Dummy-stratified [behaviour] ---
+  acc(context)=0.9608  bal_acc=0.1675  macroF1=0.1675  weightedF1=0.9608
+  macroP=0.1676  macroR=0.1675  roc_auc_ovr=0.5008  pr_auc_ovr=0.1667
+  binary: attack_recall=0.0245  attack_precision=0.0248  binary_PR_AUC=0.0201  binary_ROC_AUC=0.5024
+  timings: train=0.05s  val_infer=0.01s
+  per-class (val):
+                     precision  recall      f1  support
+    DDOS-HTTP_flood     0.0159  0.0164  0.0161      122
+    DNS_spoofing        0.0000  0.0000  0.0000      122
+    DoS-HTTP            0.0093  0.0082  0.0087      122
+    XSS                 0.0000  0.0000  0.0000      122
+    benign              0.9801  0.9803  0.9802    30001
+    brute_force         0.0000  0.0000  0.0000      123
+
+--- LR [behaviour] ---
+  acc(context)=0.5638  bal_acc=0.5930  macroF1=0.2816  weightedF1=0.7086
+  macroP=0.2804  macroR=0.5930  roc_auc_ovr=0.8430  pr_auc_ovr=0.3802
+  binary: attack_recall=0.8494  attack_precision=0.0381  binary_PR_AUC=0.3463  binary_ROC_AUC=0.8436
+  timings: train=48.46s  val_infer=0.01s
+  convergence_warnings=0
+  per-class (val):
+                     precision  recall      f1  support
+    DDOS-HTTP_flood     0.5023  0.8852  0.6409      122
+    DNS_spoofing        0.0346  0.3852  0.0635      122
+    DoS-HTTP            0.1166  0.7213  0.2007      122
+    XSS                 0.0263  0.3607  0.0491      122
+    benign              0.9946  0.5631  0.7191    30001
+    brute_force         0.0082  0.6423  0.0162      123
+
+--- LR [service] ---
+  acc(context)=0.6435  bal_acc=0.6363  macroF1=0.3216  weightedF1=0.7710
+  macroP=0.3174  macroR=0.6363  roc_auc_ovr=0.8640  pr_auc_ovr=0.4229
+  binary: attack_recall=0.8822  attack_precision=0.0480  binary_PR_AUC=0.3876  binary_ROC_AUC=0.8759
+  timings: train=48.94s  val_infer=0.01s
+  convergence_warnings=0
+  per-class (val):
+                     precision  recall      f1  support
+    DDOS-HTTP_flood     0.7032  0.8934  0.7870      122
+    DNS_spoofing        0.0411  0.4262  0.0749      122
+    DoS-HTTP            0.1297  0.7131  0.2194      122
+    XSS                 0.0208  0.3689  0.0394      122
+    benign              0.9963  0.6437  0.7821    30001
+    brute_force         0.0136  0.7724  0.0268      123
+
+--- RF [behaviour] ---
+  acc(context)=0.9854  bal_acc=0.6203  macroF1=0.6380  weightedF1=0.9848
+  macroP=0.6602  macroR=0.6203  roc_auc_ovr=0.9455  pr_auc_ovr=0.6493
+  binary: attack_recall=0.6203  attack_precision=0.6903  binary_PR_AUC=0.7090  binary_ROC_AUC=0.9454
+  timings: train=18.02s  val_infer=0.37s
+  n_trees=300  max_depth=43  model_MB=124.3
+  per-class (val):
+                     precision  recall      f1  support
+    DDOS-HTTP_flood     0.8321  0.8934  0.8617      122
+    DNS_spoofing        0.4646  0.3770  0.4163      122
+    DoS-HTTP            0.8868  0.7705  0.8246      122
+    XSS                 0.4679  0.4180  0.4416      122
+    benign              0.9923  0.9943  0.9933    30001
+    brute_force         0.3173  0.2683  0.2907      123
+
+--- RF [service] ---
+  acc(context)=0.9865  bal_acc=0.6246  macroF1=0.6533  weightedF1=0.9857
+  macroP=0.6891  macroR=0.6246  roc_auc_ovr=0.9444  pr_auc_ovr=0.6598
+  binary: attack_recall=0.6268  attack_precision=0.7351  binary_PR_AUC=0.7244  binary_ROC_AUC=0.9470
+  timings: train=18.45s  val_infer=0.35s
+  n_trees=300  max_depth=44  model_MB=124.2
+  per-class (val):
+                     precision  recall      f1  support
+    DDOS-HTTP_flood     0.9167  0.9016  0.9091      122
+    DNS_spoofing        0.5172  0.3689  0.4306      122
+    DoS-HTTP            0.9065  0.7951  0.8472      122
+    XSS                 0.4954  0.4426  0.4675      122
+    benign              0.9924  0.9954  0.9939    30001
+    brute_force         0.3061  0.2439  0.2715      123
+
+=== Compact validation table ===
+               name   variant  macro_f1  attack_recall  binary_pr_auc  balanced_accuracy  train_s
+Dummy-most_frequent behaviour    0.1650         0.0000         0.0200             0.1667   0.0330
+   Dummy-stratified behaviour    0.1675         0.0245         0.0201             0.1675   0.0460
+                 LR behaviour    0.2816         0.8494         0.3463             0.5930  48.4554
+                 LR   service    0.3216         0.8822         0.3876             0.6363  48.9421
+                 RF behaviour    0.6380         0.6203         0.7090             0.6203  18.0177
+                 RF   service    0.6533         0.6268         0.7244             0.6246  18.4480
+
+Delta_service (service-aware minus behaviour-only), no winner selected yet:
+  LR delta macro_f1: +0.0400
+  LR delta attack_recall: +0.0327
+  LR delta binary_pr_auc: +0.0413
+  LR delta balanced_accuracy: +0.0433
+  RF delta macro_f1: +0.0153
+  RF delta attack_recall: +0.0065
+  RF delta binary_pr_auc: +0.0155
+  RF delta balanced_accuracy: +0.0043
+
+=== Baseline checkpoint verifications ===
+  [PASS] reproducible (stratified dummy identical on refit)
+  [PASS] dummy predictions identical across feature variants
+  [PASS] every validation class has support
+  [PASS] test split not read by evaluation (only train+val used)
+  [PASS] LR/RF class weights from training labels only
+  [PASS] RF numeric features unscaled (tree preprocessor)

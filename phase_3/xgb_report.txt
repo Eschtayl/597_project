@@ -1,0 +1,78 @@
+Loaded sample: 204,075 flows
+Test sealed: 30,612 rows (not read). Tuning candidates per variant: 12
+
+===== XGBoost tuning [behaviour] =====
+  cand  0: macroF1=0.4457 mll=0.3941 best_iter= 998 depth=3 lr=0.1 mcw=5 sub=0.9 col=0.7 l2=1 l1=0.1
+  cand  1: macroF1=0.3953 mll=0.6053 best_iter= 999 depth=3 lr=0.03 mcw=5 sub=0.9 col=1.0 l2=5 l1=0.0
+  cand  2: macroF1=0.3840 mll=0.6223 best_iter= 999 depth=3 lr=0.03 mcw=1 sub=1.0 col=1.0 l2=5 l1=1.0
+  cand  3: macroF1=0.5064 mll=0.2073 best_iter= 998 depth=5 lr=0.1 mcw=5 sub=0.9 col=0.7 l2=1 l1=0.1
+  cand  4: macroF1=0.3949 mll=0.6073 best_iter= 999 depth=3 lr=0.03 mcw=1 sub=0.9 col=0.7 l2=5 l1=0.0
+  cand  5: macroF1=0.4994 mll=0.2238 best_iter= 999 depth=7 lr=0.03 mcw=5 sub=0.7 col=1.0 l2=1 l1=0.0
+  cand  6: macroF1=0.4127 mll=0.5122 best_iter= 999 depth=3 lr=0.05 mcw=1 sub=0.9 col=1.0 l2=10 l1=0.0
+  cand  7: macroF1=0.5145 mll=0.1860 best_iter= 999 depth=7 lr=0.05 mcw=1 sub=0.7 col=1.0 l2=10 l1=0.0
+  cand  8: macroF1=0.3990 mll=0.5415 best_iter= 999 depth=3 lr=0.05 mcw=5 sub=1.0 col=0.7 l2=10 l1=0.1
+  cand  9: macroF1=0.4875 mll=0.2455 best_iter= 999 depth=7 lr=0.03 mcw=5 sub=0.7 col=1.0 l2=10 l1=0.1
+  cand 10: macroF1=0.3949 mll=0.5927 best_iter= 999 depth=3 lr=0.03 mcw=5 sub=0.7 col=0.9 l2=5 l1=1.0
+  cand 11: macroF1=0.5331 mll=0.1536 best_iter= 998 depth=7 lr=0.1 mcw=5 sub=0.9 col=1.0 l2=1 l1=0.0
+  -> best: macroF1=0.5331 params={'max_depth': 7, 'learning_rate': 0.1, 'min_child_weight': 5, 'subsample': 0.9, 'colsample_bytree': 1.0, 'reg_lambda': 1, 'reg_alpha': 0.0} n_trees=998
+
+--- XGBoost [behaviour] validation ---
+  bal_acc=0.6894 macroF1=0.5331 weightedF1=0.9621 roc_auc_ovr=0.9437 pr_auc_ovr=0.6559
+  binary: attack_recall=0.7496 attack_precision=0.2398 binary_PR_AUC=0.6989 binary_ROC_AUC=0.9428
+  n_trees(best_iter)=998  train=62.79s infer=0.44s
+  per-class (val):
+                     precision  recall      f1  support
+    DDOS-HTTP_flood     0.9194  0.9344  0.9268      122
+    DNS_spoofing        0.0998  0.4426  0.1629      122
+    DoS-HTTP            0.7391  0.8361  0.7846      122
+    XSS                 0.1109  0.5246  0.1831      122
+    benign              0.9947  0.9516  0.9727    30001
+    brute_force         0.1038  0.4472  0.1685      123
+
+===== XGBoost tuning [service] =====
+  cand  0: macroF1=0.4726 mll=0.3792 best_iter= 997 depth=3 lr=0.1 mcw=5 sub=0.9 col=0.7 l2=1 l1=0.1
+  cand  1: macroF1=0.4356 mll=0.5828 best_iter= 999 depth=3 lr=0.03 mcw=5 sub=0.9 col=1.0 l2=5 l1=0.0
+  cand  2: macroF1=0.4274 mll=0.6066 best_iter= 999 depth=3 lr=0.03 mcw=1 sub=1.0 col=1.0 l2=5 l1=1.0
+  cand  3: macroF1=0.5190 mll=0.1923 best_iter= 998 depth=5 lr=0.1 mcw=5 sub=0.9 col=0.7 l2=1 l1=0.1
+  cand  4: macroF1=0.4305 mll=0.5879 best_iter= 999 depth=3 lr=0.03 mcw=1 sub=0.9 col=0.7 l2=5 l1=0.0
+  cand  5: macroF1=0.5194 mll=0.2052 best_iter= 999 depth=7 lr=0.03 mcw=5 sub=0.7 col=1.0 l2=1 l1=0.0
+  cand  6: macroF1=0.4444 mll=0.4971 best_iter= 999 depth=3 lr=0.05 mcw=1 sub=0.9 col=1.0 l2=10 l1=0.0
+  cand  7: macroF1=0.5299 mll=0.1691 best_iter= 999 depth=7 lr=0.05 mcw=1 sub=0.7 col=1.0 l2=10 l1=0.0
+  cand  8: macroF1=0.4380 mll=0.5232 best_iter= 999 depth=3 lr=0.05 mcw=5 sub=1.0 col=0.7 l2=10 l1=0.1
+  cand  9: macroF1=0.5058 mll=0.2260 best_iter= 999 depth=7 lr=0.03 mcw=5 sub=0.7 col=1.0 l2=10 l1=0.1
+  cand 10: macroF1=0.4376 mll=0.5743 best_iter= 999 depth=3 lr=0.03 mcw=5 sub=0.7 col=0.9 l2=5 l1=1.0
+  cand 11: macroF1=0.5395 mll=0.1424 best_iter= 998 depth=7 lr=0.1 mcw=5 sub=0.9 col=1.0 l2=1 l1=0.0
+  -> best: macroF1=0.5395 params={'max_depth': 7, 'learning_rate': 0.1, 'min_child_weight': 5, 'subsample': 0.9, 'colsample_bytree': 1.0, 'reg_lambda': 1, 'reg_alpha': 0.0} n_trees=998
+
+--- XGBoost [service] validation ---
+  bal_acc=0.6874 macroF1=0.5395 weightedF1=0.9643 roc_auc_ovr=0.9469 pr_auc_ovr=0.6595
+  binary: attack_recall=0.7463 attack_precision=0.2553 binary_PR_AUC=0.7093 binary_ROC_AUC=0.9439
+  n_trees(best_iter)=998  train=69.63s infer=0.43s
+  per-class (val):
+                     precision  recall      f1  support
+    DDOS-HTTP_flood     0.8992  0.9508  0.9243      122
+    DNS_spoofing        0.1123  0.4426  0.1791      122
+    DoS-HTTP            0.7795  0.8115  0.7952      122
+    XSS                 0.1196  0.5410  0.1958      122
+    benign              0.9946  0.9557  0.9748    30001
+    brute_force         0.1046  0.4228  0.1677      123
+
+=== XGBoost validation summary ===
+  variant  macro_f1  attack_recall  binary_pr_auc  balanced_accuracy  n_trees  train_s
+behaviour    0.5331         0.7496         0.6989             0.6894      998  62.7920
+  service    0.5395         0.7463         0.7093             0.6874      998  69.6272
+
+Delta_service (service minus behaviour), no winner selected yet:
+  delta macro_f1: +0.0064
+  delta attack_recall: -0.0033
+  delta binary_pr_auc: +0.0104
+  delta balanced_accuracy: -0.0020
+
+Reproducibility: python=3.11.2, xgboost=3.2.0, numpy=2.3.3, pandas=2.3.3, seed=23, n_jobs=-1, tree_method=hist, sample_weight=w_k = N/(K*N_k) from train
+
+=== XGBoost checkpoint verifications ===
+  [PASS] sample weights from training labels only
+  [PASS] early stopping / tuning on validation (test sealed)
+  [PASS] test split not read
+  [PASS] proba columns follow LabelEncoder class order
+  [PASS] both variants reported, no test eval, no threshold tuning

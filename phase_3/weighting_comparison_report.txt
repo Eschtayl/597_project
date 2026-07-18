@@ -1,0 +1,42 @@
+Weighting comparison on [service] with fixed tuned params: {'max_depth': 7, 'learning_rate': 0.1, 'min_child_weight': 5, 'subsample': 0.9, 'colsample_bytree': 1.0, 'reg_lambda': 1, 'reg_alpha': 0.0}
+n_estimators cap=500 (early stopping on val), test sealed.
+
+--- scheme=none (n_trees=171) ---
+  argmax: macroF1=0.7020 attack_recall=0.6072 attack_precision=0.9687 bal_acc=0.6280
+  threshold-free: binary_PR_AUC=0.7573 roc_auc=0.9549 best_binary_F1(swept)=0.7525 precision@recall>=0.90=0.1297
+                     precision  recall     f1
+    DDOS-HTTP_flood      0.921   0.951  0.935
+    DNS_spoofing         0.918   0.369  0.526
+    DoS-HTTP             0.925   0.811  0.865
+    XSS                  0.820   0.410  0.546
+    benign               0.992   1.000  0.996
+    brute_force          0.700   0.228  0.344
+--- scheme=balanced (n_trees=499) ---
+  argmax: macroF1=0.5303 attack_recall=0.7840 attack_precision=0.2152 bal_acc=0.7082
+  threshold-free: binary_PR_AUC=0.7185 roc_auc=0.9455 best_binary_F1(swept)=0.7349 precision@recall>=0.90=0.0832
+                     precision  recall     f1
+    DDOS-HTTP_flood      0.899   0.951  0.924
+    DNS_spoofing         0.082   0.451  0.138
+    DoS-HTTP             0.794   0.820  0.806
+    XSS                  0.101   0.574  0.172
+    benign               0.995   0.942  0.968
+    brute_force          0.104   0.512  0.172
+--- scheme=dampened (n_trees=499) ---
+  argmax: macroF1=0.6501 attack_recall=0.6825 attack_precision=0.5873 bal_acc=0.6687
+  threshold-free: binary_PR_AUC=0.7290 roc_auc=0.9467 best_binary_F1(swept)=0.7400 precision@recall>=0.90=0.1031
+                     precision  recall     f1
+    DDOS-HTTP_flood      0.913   0.951  0.932
+    DNS_spoofing         0.477   0.418  0.445
+    DoS-HTTP             0.901   0.820  0.858
+    XSS                  0.343   0.484  0.401
+    benign               0.994   0.990  0.992
+    brute_force          0.223   0.350  0.272
+
+=== Weighting comparison (validation) ===
+  scheme  n_trees  macro_f1  balanced_acc  argmax_attack_recall  argmax_attack_precision  binary_pr_auc  binary_roc_auc  best_binary_f1_swept  precision@recall>=0.90
+    none      171    0.7020        0.6280                0.6072                   0.9687         0.7573          0.9549                0.7525                  0.1297
+balanced      499    0.5303        0.7082                0.7840                   0.2152         0.7185          0.9455                0.7349                  0.0832
+dampened      499    0.6501        0.6687                0.6825                   0.5873         0.7290          0.9467                0.7400                  0.1031
+
+Recommended scheme (by binary PR-AUC, then swept F1): 'none' (PR-AUC=0.7573, best swept F1=0.7525)
+Note: argmax precision/recall differ mostly by operating point, which the cascade threshold re-selects; PR-AUC reflects ranking quality independent of that point.

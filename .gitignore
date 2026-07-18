@@ -1,6 +1,7 @@
 # Ignore data folders / symlinks
 data/
 datasets/
+flow_and_packet/
 flow_based
 packet_based
 

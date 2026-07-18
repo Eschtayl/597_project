@@ -1,0 +1,27 @@
+Leakage guard FAILED — building cleaned sample (locked params, no re-tuning).
+Removing 5,225 leaking flows (train: 4,607, val: 618)
+Resampled 5,225 replacement flows
+Cleaned sample: {'removed': 5225, 'replaced': 5225, 'final_n': 204075}
+  train: 142,814 flows (2,853 attack)
+  val: 30,649 flows (611 attack)
+  test: 30,612 flows (611 attack)
+Locked params: {'behaviour': {'max_depth': 7, 'learning_rate': 0.1, 'min_child_weight': 5, 'subsample': 0.9, 'colsample_bytree': 1.0, 'reg_lambda': 1, 'reg_alpha': 0.0}, 'service': {'max_depth': 7, 'learning_rate': 0.1, 'min_child_weight': 5, 'subsample': 0.9, 'colsample_bytree': 1.0, 'reg_lambda': 1, 'reg_alpha': 0.0}}
+
+Training cascade heads [behaviour]...
+  MC  [behaviour] n_trees=176  binary_PR_AUC=0.7521
+  BIN [behaviour] n_trees=333  binary_PR_AUC=0.7508  P=0.9279 R=0.6105
+
+Training cascade heads [service]...
+  MC  [service] n_trees=173  binary_PR_AUC=0.7581
+  BIN [service] n_trees=277  binary_PR_AUC=0.7566  P=0.9591 R=0.6137
+
+Saved 4 cascade heads (with fitted preprocessors).
+
+Scoring 10,748 candidate flows with 4 heads...
+Saved candidate scores -> C:\Users\Vansh Vekaria\Desktop\UVic Study\Term 3\ECE 592B\597Preprocessing\phase_3\data\cascade_candidate_scores.parquet
+
+=== Cascade-head checkpoint verifications ===
+  [PASS] no leaking flow remains in train
+  [PASS] no test-candidate remains in val
+  [PASS] all candidate flows scored
+  [PASS] phase3 test split never scored here

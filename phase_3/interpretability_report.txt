@@ -1,0 +1,106 @@
+=== Interpretability — frozen cascade head (MC service-aware) ===
+
+Rebuilding leakage-clean sample (deterministic)...
+
+Top 20 features by gain importance:
+                   feature   gain
+            SYN Flag Count 0.1492
+               LogDuration 0.0856
+        FWD Init Win Bytes 0.0850
+Total Length of Bwd Packet 0.0647
+KnownServiceCategory_https 0.0535
+ KnownServiceCategory_http 0.0303
+             Bwd IAT Total 0.0283
+            ACK Flag Count 0.0224
+         Packet Length Max 0.0177
+            RST Flag Count 0.0170
+              IsDNSService 0.0161
+         FwdBwdPacketRatio 0.0159
+SourcePortRange_well_known 0.0146
+     Bwd Packet Length Max 0.0145
+IsWellKnownDestinationPort 0.0138
+               Fwd IAT Min 0.0130
+KnownServiceCategory_other 0.0113
+         Bwd Header Length 0.0107
+         Subflow Bwd Bytes 0.0089
+     Fwd Packet Length Max 0.0089
+
+Permutation importance (raw columns, 3 repeats, metric = binary PR-AUC drop):
+  baseline binary PR-AUC on clean val: 0.7581
+                   feature  pr_auc_drop
+      KnownServiceCategory       0.1160
+        FWD Init Win Bytes       0.0354
+              Flow Bytes/s       0.0342
+             Bwd Packets/s       0.0225
+         Packet Length Std       0.0203
+         Packet Length Max       0.0198
+             LogTotalBytes       0.0198
+           FwdBwdByteRatio       0.0158
+             Fwd IAT Total       0.0146
+              Flow IAT Min       0.0143
+     Bwd Packet Length Max       0.0139
+        Packet Length Mean       0.0105
+         Packet Length Min       0.0100
+     Bwd Packet Length Min       0.0077
+             Flow Duration       0.0072
+Total Length of Bwd Packet       0.0070
+              Flow IAT Max       0.0068
+     Fwd Packet Length Min       0.0064
+             Flow IAT Mean       0.0063
+            RST Flag Count       0.0057
+
+Per-class mean |SHAP| (TreeSHAP, 5,000-row val sample), top 8 per class:
+  DDOS-HTTP_flood: KnownServiceCategory_http (1.258), Bwd Packets/s (0.494), FwdBwdByteRatio (0.384), Fwd Packet Length Min (0.280), FwdBwdPacketRatio (0.266), Fwd IAT Mean (0.214), Bwd Packet Length Mean (0.175), Fwd IAT Min (0.173)
+  DNS_spoofing: Flow Bytes/s (0.188), Packet Length Max (0.180), Flow IAT Min (0.168), SourcePortRange_ephemeral (0.159), Bwd Packet Length Min (0.148), Packet Length Std (0.129), FwdBwdByteRatio (0.101), Fwd Packets/s (0.100)
+  DoS-HTTP: KnownServiceCategory_http (0.635), Flow IAT Min (0.507), FWD Init Win Bytes (0.427), Packet Length Min (0.397), FwdBwdByteRatio (0.357), Bwd Packets/s (0.238), RST Flag Count (0.213), SourcePortRange_well_known (0.196)
+  XSS: Flow IAT Min (0.340), Flow Bytes/s (0.292), Flow IAT Max (0.250), KnownServiceCategory_other (0.203), Bwd Packet Length Max (0.187), Bwd Packets/s (0.179), Flow IAT Mean (0.140), FwdBwdByteRatio (0.117)
+  benign: Flow Bytes/s (0.179), LogTotalBytes (0.157), Bwd Packet Length Max (0.148), FwdBwdByteRatio (0.131), Flow IAT Max (0.105), KnownServiceCategory_http (0.099), Fwd Packet Length Max (0.097), Fwd IAT Mean (0.088)
+  brute_force: Bwd Packets/s (0.281), Packet Length Min (0.258), Flow Bytes/s (0.251), Flow IAT Min (0.223), LogTotalBytes (0.205), FIN Flag Count (0.193), Fwd Header Length (0.191), KnownServiceCategory_other (0.161)
+
+=== Representative cascade-test case studies (SHAP, benign-logit flipped = push toward attack) ===
+
+rejected_benign_FP (correct suppression)
+  packet label=benign  score=0.0000 (tau=0.0166)  flow=BenignTraffic3.pcap_Flow.csv|192.168.137.187-44.208.194.56-52351-443-6#1
+    Bwd Packet Length Max            shap=-1.1457  value=3423.0
+    BytesPerPacket                   shap=-0.2302  value=217.13043477316825
+    Bwd Packet Length Std            shap=-0.2085  value=1073.9709338090424
+    Flow Bytes/s                     shap=-0.1805  value=11703.334301971334
+    Bwd Bulk Rate Avg                shap=-0.1800  value=11508.260869565218
+    FIN Flag Count                   shap=-0.1705  value=2
+    Average Packet Size              shap=-0.1631  value=217.1304347826087
+    LogTotalBytes                    shap=-0.1094  value=8.516192691082654
+
+retained_attack (correct keep)
+  packet label=DoS-HTTP  score=0.9999 (tau=0.0166)  flow=DoS-HTTP_Flood1.pcap_Flow.csv|192.168.137.66-192.168.137.71-50676-80-6#1
+    FWD Init Win Bytes               shap=+2.3788  value=64240
+    KnownServiceCategory_http        shap=+0.7380
+    Active Max                       shap=+0.7186  value=25573061.0
+    Fwd Packet Length Max            shap=+0.3735  value=4344.0
+    Average Packet Size              shap=+0.3226  value=746.0925925925926
+    BytesPerPacket                   shap=+0.2674  value=746.0925925787761
+    Flow IAT Max                     shap=+0.2599  value=13181025.0
+    Fwd IAT Mean                     shap=+0.2351  value=1186455.6623093681
+
+wrongly_rejected_attack (missed by cascade)
+  packet label=DoS-HTTP  score=0.0155 (tau=0.0166)  flow=DoS-HTTP_Flood1.pcap_Flow.csv|129.146.131.8-192.168.137.218-123-41438-17#1
+    Packet Length Mean               shap=+0.1595  value=48.0
+    Bwd Packet Length Max            shap=-0.1371  value=48.0
+    Flow Bytes/s                     shap=-0.0997  value=1502.3239072940955
+    KnownServiceCategory_other       shap=+0.0972
+    KnownServiceCategory_http        shap=-0.0800
+    Flow IAT Max                     shap=-0.0763  value=63901.0
+    SourcePortRange_well_known       shap=-0.0738
+    LogTotalBytes                    shap=+0.0737  value=4.574710978503383
+
+wrongly_retained_benign (residual FP)
+  packet label=benign  score=0.7871 (tau=0.0166)  flow=BenignTraffic.pcap_Flow.csv|192.168.137.224-54.153.101.7-22253-32100-17#1
+    LogTotalBytes                    shap=+0.6499  value=4.110873864173311
+    FwdBwdByteRatio                  shap=+0.5292  value=3.9999999997499995
+    Packet Length Std                shap=+0.3097  value=20.784609690826528
+    DestinationPortRange_registered  shap=+0.2190
+    Flow Bytes/s                     shap=+0.2034  value=575.9483950238058
+    Fwd Packet Length Min            shap=+0.1901  value=48.0
+    Total Length of Fwd Packet       shap=+0.1700  value=48.0
+    Fwd Header Length                shap=+0.1632  value=8
+
+Saved -> C:\Users\Vansh Vekaria\Desktop\UVic Study\Term 3\ECE 592B\597Preprocessing\phase_3\data\interpretability.json
