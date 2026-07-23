@@ -58,3 +58,11 @@ AE_HIDDEN_DIMS_GRID = [
 # method: 'mean' | 'max' | 'weighted'
 ENSEMBLE_METHOD = 'mean'
 ENSEMBLE_WEIGHT_AE = 0.6
+
+# K-Means anomaly detector (packet level)
+# k is large on purpose: at ~2% attack prevalence, k=2 just splits the benign
+# cloud; many small clusters let attacks form high-purity clusters instead.
+KM_N_CLUSTERS = 300
+KM_N_INIT = 10
+KM_PCA_COMPONENTS = 30     # PCA before clustering (0 disables); tamed distance concentration
+KM_MINIBATCH = True        # MiniBatchKMeans keeps large-k fitting fast

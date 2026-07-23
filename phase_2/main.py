@@ -19,6 +19,7 @@ from models.autoencoder import (
     get_latent_embedding,
 )
 from models.ensemble import fuse_scores
+from models.kmeans import train_kmeans, get_anomaly_scores as get_km_scores
 from evaluation import (
     compute_detection_metrics,
     per_attack_detection_rate,
@@ -98,6 +99,26 @@ def run_isolation_forest(x_train, x_test, labels_test, y_train, y_test):
     evaluate_and_report(
         y_test, y_pred_test, test_scores, labels_test,
         threshold, 'Isolation Forest', 'if', plots=('roc',)
+    )
+    return model, train_scores, test_scores
+
+
+def run_kmeans(x_train, x_test, labels_test, y_train, y_test):
+    print('Training K-Means (PCA + cluster attack-purity scoring)')
+    model = train_kmeans(x_train, y_train)
+
+    print('Computing anomaly scores')
+    train_scores = get_km_scores(model, x_train)
+    test_scores = get_km_scores(model, x_test)
+
+    print('Choosing threshold and generating alerts')
+    threshold = choose_threshold(train_scores, y_train)
+    y_pred_test = generate_alerts(test_scores, threshold)
+
+    print('Evaluating K-Means')
+    evaluate_and_report(
+        y_test, y_pred_test, test_scores, labels_test,
+        threshold, 'K-Means (PCA + purity)', 'km', plots=('roc', 'score', 'confusion')
     )
     return model, train_scores, test_scores
 
@@ -193,11 +214,11 @@ def main():
     parser = argparse.ArgumentParser(description='Phase 2 packet anomaly detection')
     parser.add_argument(
         'task',
-        choices=['eda', 'if', 'ae', 'tune', 'ensemble', 'latent', 'all'],
+        choices=['eda', 'if', 'ae', 'tune', 'ensemble', 'latent', 'kmeans', 'all'],
         help=(
             'eda: plots only; if: Isolation Forest; ae: baseline autoencoder; '
             'tune: AE architecture search; ensemble: IF+AE score fusion; '
-            'latent: IF on AE latent; all: run everything'
+            'latent: IF on AE latent; kmeans: K-Means (PCA + purity); all: run everything'
         ),
     )
     args = parser.parse_args()
@@ -230,6 +251,9 @@ def main():
     elif args.task == 'latent':
         ae_model = tune_and_get_best(x_train, y_train)
         run_latent(ae_model, x_train, x_test, labels_test, y_train, y_test)
+
+    elif args.task == 'kmeans':
+        run_kmeans(x_train, x_test, labels_test, y_train, y_test)
 
     elif args.task == 'all':
         _, if_train, if_test = run_isolation_forest(x_train, x_test, labels_test, y_train, y_test)

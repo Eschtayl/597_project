@@ -12,6 +12,7 @@ All Phase 2 code lives in `phase_2/`:
 - `data_prep.py` — packet prep, train/test split, threshold, alerts
 - `models/isolation_forest.py` — Isolation Forest
 - `models/autoencoder.py` — autoencoder
+- `models/kmeans.py` — K-Means (PCA + cluster attack-purity scoring)
 - `evaluation.py` — metrics and plots
 - `eda.py` — EDA plots
 - `main.py` — Phase 2 entry point
@@ -24,6 +25,7 @@ cd phase_2
 python main.py eda
 python main.py if
 python main.py ae
+python main.py kmeans
 python main.py all
 ```
 
@@ -33,5 +35,6 @@ Or from the project root:
 python phase_2/main.py eda
 python phase_2/main.py if
 python phase_2/main.py ae
+python phase_2/main.py kmeans
 python phase_2/main.py all
 ```

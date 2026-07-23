@@ -133,3 +133,22 @@ Per-attack detection rate:
   XSS: 0.6034
   brute_force: 0.7984
 
+
+### PHASE 2 — K-Means (PCA + purity) ###
+
+Threshold: 0.19475632373198304
+Precision: 0.6719
+Recall: 0.3000
+F1: 0.4148
+FPR: 0.0042
+FNR: 0.7000
+AUC-ROC: 0.8475
+Confusion matrix [tn, fp, fn, tp]: [49789, 211, 1008, 432]
+
+Per-attack detection rate:
+  DDOS-HTTP_flood: 0.7568
+  DNS_spoofing: 0.0102
+  DoS-HTTP: 0.5964
+  XSS: 0.0140
+  brute_force: 0.1189
+
