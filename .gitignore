@@ -11,8 +11,10 @@ packet_based
 # Ignore large file formats
 *.csv
 *.pdf
+*.xcf
 
 # Ignore Python environment cache
 __pycache__/
 .venv/
 .mplconfig/
+

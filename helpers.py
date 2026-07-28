@@ -23,15 +23,14 @@ def benign_load_and_label(all_csvs):
         (pd.read_csv(f).assign(label='benign') for f in benign_files_flow), 
         ignore_index=True
     )
-    return df_benign_flow
+    return df_benign_flow.copy()
 
 def attacks_load_and_label(all_csvs):
     """
-    Filters, loads, and labels all attack files from a list of CSV paths.
+    Finds, loads, and labels all attack files from a list of CSV paths.
     """
     # Attack files
     attack_files = [f for f in all_csvs if not os.path.basename(f).startswith("Benign")]
-    
     substring_map = {
         'DDoS-HTTP': 'DDOS-HTTP_flood',
         'DoS-HTTP': 'DoS-HTTP',
@@ -41,24 +40,22 @@ def attacks_load_and_label(all_csvs):
     }
     
     processed_dfs = []
-   
     for file_path in attack_files: # Loop through files, load, label, and append to the list
         df = pd.read_csv(file_path, low_memory=False)
         filename = os.path.basename(file_path)
         
-        # label base on file name
+        # label based on file name
         assigned_label = 'Unknown Attack'
         for substring, label in substring_map.items():
             if substring in filename:
                 assigned_label = label
-                break
-                
+                break       
         # Apply the label and store the dataframe
         df['label'] = assigned_label
         processed_dfs.append(df)
         
     # Combine the list into a dataframe
-    return pd.concat(processed_dfs, ignore_index=True)      
+    return pd.concat(processed_dfs, ignore_index=True).copy()      
 
 def benign_sampler_200k(df_benign, seed=0):
     '''
@@ -72,19 +69,20 @@ def benign_sampler_200k(df_benign, seed=0):
 
 
 
-def attack_sampler(df_attacks, label_col='label', random_seed=None):
-    '''
-    4000-6200 attack observations sampled, plus integrity checks
-    '''
+def attack_sampler(df_attacks, label_col='label', random_seed=0):
+    """
+    4000-6200 attack observations sampled, plus integrity checks.
+    Sampling is stratified to ensure equal representation of each attack
+    """
     # Integrity Check
     unique_attack_count = df_attacks[label_col].nunique()
     if unique_attack_count != 5:
-        raise ValueError(f"Dataset integrity failure: Expected 5 attack types, found {unique_attack_count}.")
+        raise ValueError(f"Expected 5 attack types, found {unique_attack_count}.")
 
     # generate random sample
     rng = np.random.default_rng(seed=random_seed)
     num_attack_samples = rng.integers(4000, 6200, endpoint=True)
-    samples_per_attack = num_attack_samples // 5 
+    samples_per_attack = num_attack_samples // 5 # close enough
     # Group by and sample
     df_attack_sampled = (df_attacks.groupby(label_col)
                                     .sample(n=samples_per_attack, random_state=random_seed))
@@ -131,6 +129,9 @@ def load_csv(path):
 # --------------------------------------------
 
 def check_for_infinities(df):
+    """
+    What it says on the tin
+    """
     # numeric columns, others can't be infinity
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     
@@ -149,39 +150,44 @@ def check_for_infinities(df):
         
     return inf_cols
 
-def identify_outliers_from_samples(df_combined, multiplier=1.5):
-    # numeric columns 
+def identify_outliers(df_combined, multiplier=1.5):
+    """
+    What it says on the tin
+    """
+    # Numeric columns 
     df_numeric = df_combined.select_dtypes(include=[np.number])
     
-    # Q1 and Q3 a.k.a 25th and 75th 
+    # First and Third Quantile or 25th and 75th percentile
     Q1 = df_numeric.quantile(0.25)
     Q3 = df_numeric.quantile(0.75)
     IQR = Q3 - Q1 # Inter Quartile Range
     
-    # statistical boundaries for "Outlier"
+    # Statistical boundaries for "Outlier"
     lower_bound = Q1 - (multiplier * IQR)
     upper_bound = Q3 + (multiplier * IQR)
     
-    #  mask of values outside the boundaries
+    # Mask of values outside the boundaries
     outlier_mask = (df_numeric < lower_bound) | (df_numeric > upper_bound)
     
-    # count outliers
+    # Count outliers
     outlier_counts = outlier_mask.sum()
     outlier_pct = (outlier_counts / len(df_numeric)) * 100
     
-    # human readable
+    # Human readable
     report = pd.DataFrame({
         'Outlier Count': outlier_counts,
         'Percentage (%)': outlier_pct
     })
     
-    #  features with outliers, descending order
+    # Features with outliers, descending order
     report = report[report['Outlier Count'] > 0].sort_values(by='Percentage (%)', ascending=False)
-    
     return report
 
 
 def get_missing_report(df, dataset_name):
+    """
+    Finds and reports missing values
+    """
     # Calculate the percentage of NaNs per column
     missing_pct = df.isna().mean() * 100
     
@@ -199,17 +205,17 @@ def get_missing_report(df, dataset_name):
 # Preprocessing Helpers
 # ---------------------
 
-def shuffle_and_segregate(df_combined, seed =0):
-    '''
-    shuffles features, and splits features from labels
-    '''
+def shuffle_and_seperate(df_combined, seed =0):
+    """
+    shuffles features, and splits features from label column
+    """
     # Shuffle
     df_combined = df_combined.sample(frac=1, random_state=seed).reset_index(drop=True)
     # Labels
     labels = df_combined['label']
     # Data
     df_features = df_combined.drop(columns=['label'])
-    
+ 
     return df_features, labels
 
 
@@ -222,7 +228,6 @@ def handle_missing_data(df_features):
     * It is a binary variable with a value of 1 if there was a missing value
     * median replaces Nan if numeric column
     * new category is created if discrete column, no new feature column is needed.
-
     * The big idea is to impute values for missing data so models can train, and also keep track of if the data was imputed
     '''
     df_clean = df_features.copy()
@@ -259,9 +264,9 @@ def handle_missing_data(df_features):
     return df_clean
 
 def one_hot_encoder(df):
-    '''
-    one hot encodes categorical features
-    '''
+    """
+    one hot encodes categorical features with low cardinality, these were discovered during EDA
+    """
     df = df.drop(columns=['http_host'], errors='ignore')  # this column was found to only contain 'none', and has no information
     cols_to_encode = ['http_request_method', 'handshake_version', 'http_content_type']
     
@@ -275,9 +280,9 @@ def one_hot_encoder(df):
 def split_identifiers(df_clean):
     '''
     Finds columns that identify a machine or user to seperate them from training.
-    They are not a measure of network behaviour.
+    They are not a measure of network behaviour, should not be used in training.
     '''
-    # list of magic words to pick out columns that identify a machine or user
+    # list of magic words to pick out columns that identify a machine or user. Discovered by inspection
     identifier_keywords = [
         'ip', 'port', 'mac', 'timestamp', 'flow_id', 'protocol', 
         'server', 'host', 'user_agent', 'oui', 'uri', 'content_type'
@@ -286,54 +291,47 @@ def split_identifiers(df_clean):
     for col in df_clean.columns:
         # Break the column name into words based on delimiters
         words = col.lower().replace(' ', '_').replace('-', '_').split('_')
-        
         # Check if the keyword is a word in the column name
         if any(keyword in words for keyword in identifier_keywords):
             identifier_cols.append(col)
         
     df_identifiers = df_clean[identifier_cols].copy()
-    df_numeric = df_clean.drop(columns=identifier_cols).copy()
+    df_features_clean = df_clean.drop(columns=identifier_cols).copy()
     
-    return df_numeric, df_identifiers
+    return df_features_clean, df_identifiers
 
 def feature_cleaner(df_features):
+    """
+    handles missing data, one-hot encodes low cardinality categorical features, and selects features to train on
+    """
     df_clean_features = handle_missing_data(df_features) # no need to worry about labels
     df_clean_hot = one_hot_encoder(df_clean_features)
-    df_numeric, df_identifiers = split_identifiers(df_clean_hot) # For clarity
-    return df_numeric, df_identifiers
+    df_features_clean, df_identifiers = split_identifiers(df_clean_hot) # For clarity
+    return df_features_clean, df_identifiers
 
 
-def log_and_scale(df_numeric, df_identifiers, labels):
-    #  Handle Hex strings and remaining objects
-    object_cols = df_numeric.select_dtypes(include=['object', 'string']).columns
-    for col in object_cols:
-        # Convert hex strings from packet headers into base-10 integers
-        df_numeric[col] = df_numeric[col].apply(
-            lambda x: int(x, 16) if isinstance(x, str) and str(x).startswith('0x') else x
-        )
-        # Force everything else to numeric, turning text into NaNs
-        df_numeric[col] = pd.to_numeric(df_numeric[col], errors='coerce')
-        
-    if not object_cols.empty:
-        df_numeric[object_cols] = df_numeric[object_cols].fillna(df_numeric[object_cols].median())
-        
-    #  Strict Fallback: Drop any columns that were 100% un-parsable text
-    df_numeric = df_numeric.dropna(axis=1, how='all')
-    df_numeric = df_numeric.select_dtypes(include=[np.number])
+def log_and_scale(df_features_clean, labels):
+    """
+    Apprlies a natural logarithm to numeric features, to help with skewness seen in fetaure histograms.
+    Scales features non-paramtericly, this is to avoid bias.
+    Returns the pre-processed data, along with scaler needed for testing.
+    """
+    #  Drop columns that are un-parsable text
+    df_features_clean = df_features_clean.dropna(axis=1, how='all')
+    df_features_clean = df_features_clean.select_dtypes(include=[np.number])
     
     # Log Transformation
-    # Compresses heavy-tailed distributions (like packet sizes and inter-arrival times)
-    df_log_transformed = np.log1p(df_numeric.abs())
+    # Compresses heavy-tailed distributions 
+    df_log_transformed = np.log1p(df_features_clean)
     
     # Robust Scaling
-    # Uses median and interquartile range (IQR) to scale data, ignoring remaining outliers
+    # Uses median and interquartile range to scale data, this is non-parmetric.
     scaler = RobustScaler()
     scaled_array = scaler.fit_transform(df_log_transformed)
-    df_scaled = pd.DataFrame(scaled_array, columns=df_numeric.columns)
+    df_scaled = pd.DataFrame(scaled_array, columns=df_features_clean.columns)
     
     # Reassemble the dataset
     df_final = pd.concat([
-        df_identifiers.reset_index(drop=True), 
         df_scaled.reset_index(drop=True), 
         labels.reset_index(drop=True)
     ], axis=1)
