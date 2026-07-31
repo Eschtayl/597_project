@@ -1,0 +1,110 @@
+=== Gradient Boosting on flow test set ===
+accuracy:  0.9358
+precision: 0.2128
+recall:    0.8209
+f1:        0.3380
+fpr:       0.0619
+fnr:       0.1791
+auc_roc:   0.9483
+cm tn/fp/fn/tp: 37525/2475/146/669
+Per-attack detection rate:
+  DDOS-HTTP_flood: 1.0000
+  DNS_spoofing: 0.5780
+  DoS-HTTP: 0.9080
+  XSS: 0.8165
+  brute_force: 0.8314
+train_time_seconds: 14.91
+test_inference_seconds: 0.1156
+test_rows: 40815
+
+=== Neural Net on flow test set ===
+accuracy:  0.9890
+precision: 0.8980
+recall:    0.5080
+f1:        0.6489
+fpr:       0.0012
+fnr:       0.4920
+auc_roc:   0.9173
+cm tn/fp/fn/tp: 39953/47/401/414
+Per-attack detection rate:
+  DDOS-HTTP_flood: 0.9664
+  DNS_spoofing: 0.3815
+  DoS-HTTP: 0.7546
+  XSS: 0.2595
+  brute_force: 0.2326
+train_time_seconds: 17.26
+test_inference_seconds: 0.0383
+test_rows: 40815
+
+=== Phase 2 (tuned AE) - reference ===
+accuracy:  0.9809
+precision: 0.6603
+recall:    0.5240
+f1:        0.5843
+fpr:       0.0071
+fnr:       0.4760
+auc_roc:   0.9294
+cm tn/fp/fn/tp: 49646/354/625/688
+Per-attack detection rate:
+  DDOS-HTTP_flood: 0.6955
+  DNS_spoofing: 0.2898
+  DoS-HTTP: 0.8403
+  XSS: 0.0482
+  brute_force: 0.6717
+ae_dims: (128, 64, 32)
+threshold: 0.031506
+ae_train_time_seconds: 135.38
+ae_test_inference_seconds: 1.68
+
+=== Two-stage (Phase 2 AE + Phase 3 Gradient Boosting) ===
+accuracy:  0.9862
+precision: 0.9647
+recall:    0.4783
+f1:        0.6395
+fpr:       0.0005
+fnr:       0.5217
+auc_roc:   nan
+cm tn/fp/fn/tp: 49977/23/685/628
+Per-attack detection rate:
+  DDOS-HTTP_flood: 0.6955
+  DNS_spoofing: 0.0980
+  DoS-HTTP: 0.8368
+  XSS: 0.0402
+  brute_force: 0.6340
+phase2_fp: 354
+two_stage_fp: 23
+fp_reduction_pct: 93.50
+alerts_matched: 943
+alerts_total: 1042
+match_time_seconds: 2.05
+phase3_inference_seconds: 0.0103
+refinement_kept: 552
+refinement_dropped: 391
+refinement_unmatched_kept: 99
+
+=== Two-stage (Phase 2 AE + Phase 3 Neural Net) ===
+accuracy:  0.9845
+precision: 0.9832
+recall:    0.4014
+f1:        0.5700
+fpr:       0.0002
+fnr:       0.5986
+auc_roc:   nan
+cm tn/fp/fn/tp: 49991/9/786/527
+Per-attack detection rate:
+  DDOS-HTTP_flood: 0.6579
+  DNS_spoofing: 0.0408
+  DoS-HTTP: 0.7569
+  XSS: 0.0281
+  brute_force: 0.4415
+phase2_fp: 354
+two_stage_fp: 9
+fp_reduction_pct: 97.46
+alerts_matched: 943
+alerts_total: 1042
+match_time_seconds: 1.86
+phase3_inference_seconds: 0.0031
+refinement_kept: 437
+refinement_dropped: 506
+refinement_unmatched_kept: 99
+
