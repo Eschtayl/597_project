@@ -1,16 +1,24 @@
-"""Feature builders: behaviour-only and service-aware model matrices, plus the
-frozen diagnostic partitions. Both model matrices are built
-from the same sampled rows and the same split/fold assignments.
+"""Feature builders for Phase 3 supervised heads.
 
-Key leakage rules:
-  * behaviour-only excludes identity, ports, protocol, timestamps, labels, and all
-    diagnostic buckets.
-  * service-aware adds only *universal* transformed service context (protocol,
-    service categories, port-range categories, HTTP/DNS/well-known indicators) —
-    never exact ports, never `service_aligned` (which is capture-label-derived and
-    would leak the target), never the Brute Force diagnostic bucket.
-  * diagnostics (`service_aligned`, Brute Force buckets) are computed and saved for
-    later sensitivity analysis but are never model features.
+Produces two model matrices from the same sampled rows / split assignments:
+
+- **Behaviour-only** — aggregated CICFlowMeter stats + engineered ratios/logs.
+  No IPs, ports, protocol, timestamps, or labels. This is the honest detector.
+- **Service-aware** — behaviour-only **plus** universal port *semantics*
+  (protocol string, HTTP/DNS/well-known flags, well-known/registered/ephemeral
+  ranges). Never exact ports.
+
+Also computes **diagnostics** (``service_aligned``, Brute Force behavioural
+buckets) for sensitivity analysis. Those columns are saved alongside the data
+but are listed in ``FORBIDDEN_IN_MATRIX`` and must never enter a model.
+
+Leakage rules (enforced by ``check_features.py``)
+-------------------------------------------------
+- Exact ports / IPs / timestamps / capture filenames → forbidden.
+- ``service_aligned`` is capture-label-derived → diagnostic only.
+- Brute Force bucket thresholds are fitted on **train benign** quantiles only.
+- Preprocessors (impute / scale / one-hot) are built unfitted here; callers
+  must ``fit`` on the training partition only.
 """
 import numpy as np
 import pandas as pd
@@ -55,6 +63,12 @@ FORBIDDEN_IN_MATRIX = [
 # Engineered behavioural features (per-flow, no identity)
 # ---------------------------------------------------------------------------
 def add_engineered_behaviour(df):
+    """Add scale-free ratios and log-compressed size features.
+
+    These compress heavy-tailed totals (duration / bytes / packets) and expose
+    directionality (fwd/bwd) and handshake shape (SYN/ACK) without using any
+    identity columns.
+    """
     df = df.copy()
     fwd_p = df['Total Fwd Packet'].fillna(0)
     bwd_p = df['Total Bwd packets'].fillna(0)
@@ -77,6 +91,7 @@ def add_engineered_behaviour(df):
 # Service context (universal port semantics — not label-derived)
 # ---------------------------------------------------------------------------
 def _port_range(p):
+    """Map a port number to none / well_known / registered / ephemeral."""
     p = pd.to_numeric(p, errors='coerce')
     out = np.select(
         [p.isna() | (p <= 0), p <= 1023, p <= 49151],
@@ -87,6 +102,11 @@ def _port_range(p):
 
 
 def add_service_fields(df):
+    """Add service-aware columns from universal port semantics only.
+
+    Exact ``Src Port`` / ``Dst Port`` are **not** copied into the model matrix —
+    only category / range / binary indicators derived from them.
+    """
     df = df.copy()
     src = pd.to_numeric(df['Src Port'], errors='coerce')
     dst = pd.to_numeric(df['Dst Port'], errors='coerce')
@@ -106,6 +126,11 @@ def add_service_fields(df):
 # Diagnostics (analysis only — never features)
 # ---------------------------------------------------------------------------
 def compute_service_aligned(df):
+    """Label-aware diagnostic: does the flow's port/protocol match its attack type?
+
+    Used only for sensitivity tables (e.g. "aligned vs unaligned attack flows").
+    Because it depends on the proxy label it **must not** be a model feature.
+    """
     src = pd.to_numeric(df['Src Port'], errors='coerce')
     dst = pd.to_numeric(df['Dst Port'], errors='coerce')
     proto = pd.to_numeric(df['Protocol'], errors='coerce')

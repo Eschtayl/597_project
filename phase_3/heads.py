@@ -1,19 +1,26 @@
-"""The four Phase 3 model heads.
+"""The four Phase 3 model heads (standalone / pre-cascade view).
 
-  MC  behaviour : multiclass XGBoost, score s_MC  = 1 - P(benign)
-  MC  service   : multiclass XGBoost, score s_MC  = 1 - P(benign)
-  BIN behaviour : binary XGBoost,     score s_BIN = P(attack)
-  BIN service   : binary XGBoost,     score s_BIN = P(attack)
+Trains one scorer for each cell of the 2×2 design:
 
-All heads are UNWEIGHTED XGBoost with the locked tuned hyperparameters (the
-weighting comparison showed no weighting is best). Each head's probabilities are
-NOT assumed comparable across heads; every head gets its own cascade threshold
-later. Fit on TRAIN, early-stop on VAL. Test is never scored here.
+=======  =========================  ============================
+Kind     Behaviour-only             Service-aware
+=======  =========================  ============================
+MC       ``s_mc_behaviour``         ``s_mc_service``
+         (= 1 − P(benign))          (= 1 − P(benign))
+BIN      ``s_bin_behaviour``        ``s_bin_service``
+         (= P(attack))              (= P(attack))
+=======  =========================  ============================
 
-Saves fitted (preprocessor, model) per head + validation scores for the cascade.
-Reports only the standalone-classifier view (view 1) on validation.
+All heads are **unweighted** XGBoost with the locked tuned hyperparameters
+(``weighting_comparison.py`` chose ``none``). Scores are **not** assumed
+comparable across heads — each head later gets its own cascade threshold in
+``cascade_eval.py``.
 
-Usage: python phase_3/heads.py
+This script reports the standalone-classifier view on validation only. The
+cascade path re-trains leakage-clean copies in ``cascade_heads.py`` (with
+fitted preprocessors retained). Test is never scored here.
+
+Usage: ``python phase_3/heads.py``
 """
 import os
 import sys

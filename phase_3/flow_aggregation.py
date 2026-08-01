@@ -1,18 +1,25 @@
 """LogicalFlowID construction and mathematically-defensible segment aggregation.
 
-CICFlowMeter splits flows longer than 2 minutes into successive segments that
-share a directional 5-field Flow ID. ~45% of rows belong to such multi-segment
-flows, and the same Flow ID is also *reused* by unrelated conversations hours
-apart. This module:
+Why this exists
+---------------
+CICFlowMeter splits conversations longer than ~2 minutes into successive
+*segments* that share a directional 5-field Flow ID. Roughly 45 % of rows
+belong to multi-segment conversations, and the same Flow ID is also *reused*
+by unrelated conversations hours later. Blind ``groupby('Flow ID')`` therefore
+both under-merges (misses contiguous segments) and over-merges (glues unrelated
+reuse together).
 
-  1. groups segments into logical flows (Flow ID + temporal cluster), and
-  2. aggregates each logical flow into one record using per-feature rules that
-     follow the meaning of each column (sum / min / max / weighted-mean /
-     pooled-variance / recomputed-rate), rather than a blind mean/sum/max.
+What this module does
+---------------------
+1. **Cluster** consecutive segments of the same ``(source_file, Flow ID)`` into
+   a ``LogicalFlowID`` while timestamp gaps stay ≤ ``GAP_CUTOFF_SECONDS``
+   (300 s). A larger gap starts a new logical flow (ID reuse).
+2. **Aggregate** each logical flow into one record using per-feature rules that
+   follow the meaning of each column (sum / min / max / weighted-mean /
+   pooled-variance / recomputed-rate) — not a blind mean/sum/max.
 
-The aggregation rule for every feature is declared in AGG_RULES so the
-"feature -> rule -> justification" dictionary is report material (see
-feature_dictionary()).
+The rule for every feature is listed below and summarised by
+``feature_dictionary()`` for the written report. See ``phase_3/README.md``.
 """
 import os
 import glob
@@ -118,6 +125,7 @@ ENGINEERED_COLS = ['SegmentCount', 'ts_first', 'ts_last', 'LogicalFlowID', 'sour
 # Loading + labelling
 # ---------------------------------------------------------------------------
 def label_from_filename(filename):
+    """Infer proxy class from the capture filename (never from the CSV Label)."""
     base = os.path.basename(filename)
     if base.startswith('Benign'):
         return BENIGN_LABEL
@@ -128,7 +136,11 @@ def label_from_filename(filename):
 
 
 def load_flow_file(path):
-    """Load one flow CSV, attach filename-derived label and source_file."""
+    """Load one flow CSV and attach filename-derived ``label`` + ``source_file``.
+
+    ``source_file`` is part of the LogicalFlowID key so the same Flow ID string
+    in two different captures cannot accidentally merge.
+    """
     df = pd.read_csv(path, low_memory=False)
     df[LABEL_COL] = label_from_filename(path)
     df['source_file'] = os.path.basename(path)
@@ -139,18 +151,23 @@ def load_flow_file(path):
 # LogicalFlowID
 # ---------------------------------------------------------------------------
 def assign_logical_flow_id(df, cutoff=GAP_CUTOFF_SECONDS):
-    """Add a LogicalFlowID column: same (source_file, Flow ID) segments are one
-    logical flow while consecutive timestamp gaps stay <= cutoff seconds; a
-    larger gap starts a new cluster (ID reuse). Rows are returned sorted by
-    (source_file, Flow ID, timestamp)."""
+    """Cluster segments into logical flows by (source_file, Flow ID, gap).
+
+    Same ``(source_file, Flow ID)`` segments stay one logical flow while
+    consecutive timestamp gaps stay ≤ ``cutoff`` seconds; a larger gap starts a
+    new cluster (ID reuse). Rows are returned sorted by
+    ``(source_file, Flow ID, timestamp)``.
+
+    ID format: ``{source_file}|{Flow ID}#{cluster_index}``.
+    """
     df = df.copy()
     df['ts'] = pd.to_datetime(df[TIMESTAMP_COL], format=TIMESTAMP_FORMAT, errors='coerce')
     key = ['source_file', FLOW_ID_COL]
     df = df.sort_values(key + ['ts']).reset_index(drop=True)
 
+    # Seconds between consecutive segments of the same key (NaN on the first).
     gap = df.groupby(key, sort=False)['ts'].diff().dt.total_seconds()
-    # A new cluster starts on the first segment of a key (gap is NaN) or when the
-    # gap exceeds the cutoff.
+    # New cluster on first segment of a key, or when the gap exceeds the cutoff.
     new_cluster = gap.isna() | (gap > cutoff)
     df['__cluster'] = new_cluster.astype(int).groupby([df['source_file'], df[FLOW_ID_COL]]).cumsum()
 
@@ -162,9 +179,14 @@ def assign_logical_flow_id(df, cutoff=GAP_CUTOFF_SECONDS):
 
 
 # ---------------------------------------------------------------------------
-# Aggregation
+# Aggregation helpers
 # ---------------------------------------------------------------------------
 def _weighted_mean(df, g, col, weight_col):
+    """Packet-count-weighted mean of ``col`` within each LogicalFlowID.
+
+    Exact for single-segment flows (weight cancels). Rows with NaN in ``col``
+    contribute zero weight so they do not pull the mean.
+    """
     w = df[weight_col].where(df[col].notna(), 0.0)
     num = (df[col].fillna(0.0) * w).groupby(df['LogicalFlowID'], sort=False).sum()
     den = w.groupby(df['LogicalFlowID'], sort=False).sum()
@@ -173,6 +195,12 @@ def _weighted_mean(df, g, col, weight_col):
 
 
 def _pooled_std(df, g, std_col, mean_col, n_col):
+    """Pooled standard deviation across segments of a logical flow.
+
+    Combines within-segment sum-of-squares (from per-segment std) with
+    between-segment sum-of-squares (from per-segment means), then divides by
+    ``N - 1``. Single-packet / empty groups return 0.
+    """
     n = df[n_col].fillna(0.0).clip(lower=0.0)
     s2 = df[std_col].fillna(0.0) ** 2
     m = df[mean_col].fillna(0.0)
@@ -185,23 +213,28 @@ def _pooled_std(df, g, std_col, mean_col, n_col):
     N = parts['N']
     between = parts['B'] - (parts['C'] ** 2) / N.replace(0.0, np.nan)
     var = (parts['A'] + between) / (N - 1).where(N > 1, np.nan)
-    var = var.clip(lower=0.0).fillna(0.0)   # single-packet / empty groups -> 0
+    var = var.clip(lower=0.0).fillna(0.0)
     return np.sqrt(var).reindex(g).fillna(0.0)
 
 
 def aggregate_logical_flows(df):
-    """Collapse segment rows (with LogicalFlowID assigned) into one row per
-    logical flow using the per-feature AGG_RULES."""
+    """Collapse segment rows (with LogicalFlowID already assigned) to one row each.
+
+    Applies the per-feature rules declared in the column lists at the top of
+    this file. Metadata (IPs, ports, protocol, label, source_file) is taken
+    from the first segment; engineered ``SegmentCount`` / ``ts_first`` /
+    ``ts_last`` are derived from the group.
+    """
     df = df.copy()
+    # Synthetic weight/numerator columns used by wmean and rate rules.
     df['__total_pkts'] = df[W_FWD].fillna(0) + df[W_BWD].fillna(0)
     df['__total_bytes'] = (df['Total Length of Fwd Packet'].fillna(0)
                            + df['Total Length of Bwd Packet'].fillna(0))
 
     grp = df.groupby('LogicalFlowID', sort=False)
-    g = grp.size().index  # canonical group order
+    g = grp.size().index  # canonical group order for reindexing helpers
 
     out = {}
-    # metadata + engineered
     for c in ['source_file', LABEL_COL, FLOW_ID_COL, 'Src IP', 'Src Port',
               'Dst IP', 'Dst Port', 'Protocol']:
         out[c] = grp[c].first()
@@ -224,11 +257,11 @@ def aggregate_logical_flows(df):
 
     result = pd.DataFrame(out)
 
-    # variance = pooled std ** 2
+    # Variance columns are derived from the pooled std we just computed.
     for var_col, std_col in POOLED_VAR_COLS.items():
         result[var_col] = result[std_col] ** 2
 
-    # recomputed rates (microsecond durations)
+    # Rates must be recomputed from totals — averaging per-segment rates is wrong.
     dur = grp[DURATION_COL].sum(min_count=1).replace(0.0, np.nan)
     for c, num_col in RATE_COLS.items():
         num = grp[num_col].sum(min_count=1)
@@ -240,8 +273,11 @@ def aggregate_logical_flows(df):
 
 
 def build_unified_flows(path=FLOW_DIR, files=None, cutoff=GAP_CUTOFF_SECONDS):
-    """Full pipeline: load every flow CSV, assign LogicalFlowID per file, and
-    aggregate to one record per logical flow. Returns the concatenated frame."""
+    """End-to-end: load every flow CSV → LogicalFlowID → one row per logical flow.
+
+    Returns the concatenated unified-flow frame. This is the expensive step
+    (~986k flows across all captures); ``cascade_alignment`` caches the result.
+    """
     if files is None:
         files = sorted(glob.glob(os.path.join(path, '*.csv')))
     frames = []
@@ -253,7 +289,7 @@ def build_unified_flows(path=FLOW_DIR, files=None, cutoff=GAP_CUTOFF_SECONDS):
 
 
 def feature_dictionary():
-    """feature -> (rule, justification) — report material."""
+    """Return ``{feature: (rule, justification)}`` for the written report."""
     d = {}
     for c in SUM_COLS:
         d[c] = ('sum', 'additive count/total/active-duration across segments')
@@ -274,3 +310,4 @@ def feature_dictionary():
     for c in DROP_COLS:
         d[c] = ('dropped (Tier 3)', 'pooled sufficient statistics unavailable (no inter-segment gaps)')
     return d
+

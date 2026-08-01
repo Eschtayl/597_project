@@ -1,15 +1,23 @@
-"""Interpretability of the frozen cascade head.
+"""Interpretability of the frozen cascade head (report support).
 
-  * Global importance: XGBoost gain + permutation importance (binary PR-AUC drop,
-    permuting RAW feature columns before the preprocessor, on the leakage-clean
-    validation split the head was early-stopped on).
-  * Per-class importance: mean |SHAP| per class via native XGBoost pred_contribs
-    (TreeSHAP; no external shap dependency).
-  * Case studies: SHAP explanations for one representative cascade-test alert of
-    each kind — rejected benign FP, retained attack, wrongly rejected attack,
-    wrongly retained benign — using the frozen config's decision flows.
+Explains the sealed-test cascade winner (multiclass service-aware) three ways:
 
-Usage: python phase_3/interpretability.py
+1. **Global importance** — XGBoost gain, plus permutation importance
+   (binary PR-AUC drop when permuting RAW feature columns before the
+   preprocessor) on the leakage-clean validation split the head early-stopped
+   on.
+2. **Per-class importance** — mean |SHAP| per class via native XGBoost
+   ``pred_contribs`` (TreeSHAP; no external ``shap`` dependency).
+3. **Case studies** — SHAP for one representative cascade-test alert of each
+   kind: correctly rejected benign FP, correctly retained attack, wrongly
+   rejected attack, wrongly retained benign — using the frozen config's
+   decision flows.
+
+Rebuilds the leakage-clean sample deterministically (same seed/inputs as
+``cascade_heads.py``) so explanations match the model that produced the
+cascade scores.
+
+Usage: ``python phase_3/interpretability.py``
 """
 import os
 import sys

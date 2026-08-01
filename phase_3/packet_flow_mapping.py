@@ -1,19 +1,28 @@
-"""Packet -> logical-flow mapping via a canonical bidirectional 5-field key.
+"""Packet → logical-flow mapping via a canonical bidirectional 5-field key.
 
-Packets carry no absolute timestamp, so they cannot be resolved to a
-specific temporal cluster. We therefore map a packet's connection 5-tuple to the
-*set* of logical flows sharing that canonical key and classify the outcome; the
-cascade only trusts an unambiguous (unique) match and otherwise retains the
-Phase 2 alert.
+Why mapping is hard
+-------------------
+Packets in this dataset have **no absolute timestamp** (only relative IATs), so
+a packet cannot be pinned to a specific temporal cluster when the same 5-tuple
+is reused. The mapper therefore returns the *set* of candidate logical flows
+that share the packet's canonical key, and classifies how ambiguous that set is.
 
-The canonical key sorts the two endpoints deterministically so that reversing
-source/destination yields the same key:
+Cascade policy (see ``cascade_eval.py``)
+----------------------------------------
+- **Policy A (strict):** only ``unique_match`` may suppress an alert; every other
+  status falls back to retaining the Phase 2 alert.
+- **Policy B:** also consults ``multiple_same_capture`` — suppresses only if
+  *every* candidate scores below τ (all look benign).
 
-    endpoint_1 = (ip_1, port_1);  endpoint_2 = (ip_2, port_2)
-    canonical_key = (min(e1, e2), max(e1, e2), protocol)
+Canonical key (direction-invariant)
+-----------------------------------
+Endpoints are sorted so reversing source/destination yields the same key::
+
+    endpoint_lo = min(e1, e2);  endpoint_hi = max(e1, e2)
+    canonical_key = endpoint_lo || endpoint_hi || protocol
 
 Labels are used only to *categorise* ambiguity (same vs conflicting proxy
-labels) for the quality report — never to choose among candidate flows.
+labels) for quality reports — never to choose among candidate flows.
 """
 import os
 import glob
@@ -24,17 +33,16 @@ import pandas as pd
 from config import LABEL_COL
 from flow_aggregation import assign_logical_flow_id, label_from_filename
 
-# Mapping status categories
-UNIQUE_MATCH = 'unique_match'
-MULTI_SAME_LABEL = 'multiple_same_label'
-MULTI_SAME_CAPTURE = 'multiple_same_capture'
-MULTI_CONFLICTING = 'multiple_conflicting_labels'
-NO_MATCH = 'no_match'
-INVALID_KEY = 'invalid_key'
+# Mapping status categories (reported in check_mapping / cascade_alignment).
+UNIQUE_MATCH = 'unique_match'                       # exactly one candidate flow
+MULTI_SAME_LABEL = 'multiple_same_label'            # >1 flow, same proxy label, different captures
+MULTI_SAME_CAPTURE = 'multiple_same_capture'        # >1 flow, same label, same capture (temporal reuse)
+MULTI_CONFLICTING = 'multiple_conflicting_labels'   # >1 flow with different proxy labels
+NO_MATCH = 'no_match'                               # valid key, zero candidate flows
+INVALID_KEY = 'invalid_key'                         # missing IP / zero port / non TCP|UDP
 
-# Statuses whose flow prediction the strict cascade (Policy A) may act on; every
-# other status falls back to retaining the Phase 2 alert. Policy B additionally
-# evaluates the whole candidate set for MULTI_SAME_CAPTURE — see cascade_eval.py.
+# Statuses Policy A may act on. Everything else → retain Phase 2 alert.
+# Policy B additionally evaluates MULTI_SAME_CAPTURE (see cascade_eval.py).
 TRUSTED_STATUSES = {UNIQUE_MATCH}
 
 _FLOW_KEY_COLS = ['Flow ID', 'Src IP', 'Src Port', 'Dst IP', 'Dst Port', 'Protocol', 'Timestamp']
@@ -115,6 +123,7 @@ def build_flow_key_index(flow_files):
 # Classification
 # ---------------------------------------------------------------------------
 def _status(row):
+    """Classify one joined packet row into a mapping-status string."""
     n = row['n_candidates']
     if pd.isna(n):
         return NO_MATCH
@@ -124,12 +133,17 @@ def _status(row):
         return MULTI_CONFLICTING
     if row['n_captures'] > 1:
         return MULTI_SAME_LABEL      # same proxy label, different captures
-    return MULTI_SAME_CAPTURE        # same label, one capture -> temporal reuse
+    return MULTI_SAME_CAPTURE        # same label, one capture → temporal reuse
 
 
 def classify_packets(packet_df, flow_index):
-    """Return packet_df with columns: canonical_key, packet label, mapping
-    `status`, `n_candidates`, and `matched_lfid` (only for unique matches)."""
+    """Attach mapping columns to each packet row.
+
+    Adds ``canonical_key``, ``status``, ``n_candidates``, and ``matched_lfid``
+    (populated only for ``unique_match``). Used by the quality report
+    (``check_mapping.py``); the cascade path in ``cascade_alignment.py`` has a
+    richer variant that also keeps the full candidate list for Policy B.
+    """
     p = packet_df.copy()
     proto = packet_protocol(p['l4_tcp'], p['l4_udp'])
     key, valid = canonical_key(p['src_ip'], p['src_port'], p['dst_ip'], p['dst_port'], proto)
@@ -146,11 +160,15 @@ def classify_packets(packet_df, flow_index):
 
 
 def cascade_flow_for_packet(status, matched_lfid):
-    """Production cascade rule: trust only a unique match; otherwise retain the
-    Phase 2 alert. Returns (logical_flow_id_or_None, retain_flag)."""
+    """Policy-A helper: trust only a unique match; otherwise retain.
+
+    Returns ``(logical_flow_id_or_None, retain_flag)``. The production cascade
+    in ``cascade_eval.alert_scores`` implements both Policy A and B and is the
+    path used for the sealed-test numbers.
+    """
     if status in TRUSTED_STATUSES:
         return matched_lfid, False
-    return None, True     # no reliable match -> retain Phase 2 alert
+    return None, True     # no reliable match → retain Phase 2 alert
 
 
 # ---------------------------------------------------------------------------

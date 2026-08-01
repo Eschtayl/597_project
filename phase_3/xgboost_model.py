@@ -1,18 +1,22 @@
-"""Sample-weighted multiclass XGBoost + controlled tuning.
+"""Multiclass XGBoost hyperparameter search.
 
-Randomized search over the frozen grid with validation early stopping (n_estimators
-chosen automatically), separately for the behaviour-only and service-aware variants.
-Class imbalance is handled with per-row sample weights w_k = N/(K*N_k) computed from
-TRAIN labels only (the multiclass-correct alternative to scale_pos_weight).
+Randomized search over the frozen grid with validation early stopping
+(``n_estimators`` chosen automatically), run separately for the behaviour-only
+and service-aware variants.
 
-NOTE: the weighting itself was later superseded — weighting_comparison.py showed
-NO weighting wins, and all downstream heads are unweighted. This script's output
-that survives is the tuned hyperparameters in data/xgb_results.json['best_params'].
+Historical note on weighting
+----------------------------
+This script originally trained with inverse-frequency sample weights
+``w_k = N/(K*N_k)``. ``weighting_comparison.py`` later showed **no weighting**
+wins on ranking quality, so all downstream heads are unweighted. The artifact
+that survives from this script is the tuned hyperparameters in
+``data/xgb_results.json['best_params']`` — reused (unlocked) by heads /
+cascade / ablations / temporal robustness.
 
-Fit on TRAIN, tune/early-stop on VALIDATION, report on VALIDATION. Test stays sealed;
-no threshold tuning and no cascade here.
+Protocol: fit on TRAIN, tune/early-stop on VAL, report on VAL. Test sealed.
+No threshold tuning and no cascade here.
 
-Usage: python phase_3/xgboost_model.py [n_candidates]
+Usage: ``python phase_3/xgboost_model.py [n_candidates]``
 """
 import os
 import sys

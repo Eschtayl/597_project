@@ -1,12 +1,17 @@
 """Sampling over UNIFIED logical flows.
 
-Sampling happens after flow unification: we build one record per LogicalFlowID,
-then draw 200,000 benign flows and 4,000-6,200 attack flows balanced across the
-five attack types. Sampling raw segments would over-weight multi-segment flows
-and collapse under grouping, so it is done on unified flows only.
+Why sample after unification
+----------------------------
+Sampling raw CICFlowMeter *segments* would over-weight multi-segment
+conversations and then collapse when we group by LogicalFlowID. Instead we:
 
-If a class has fewer unique flows than requested it is sampled in full (no
-silent duplication) and a warning is emitted.
+1. Build one record per LogicalFlowID (``flow_aggregation.build_unified_flows``).
+2. Draw 200,000 benign flows + 4,000–6,200 attack flows balanced across the
+   five attack types (same semantics as Phase 1 / Task 1.1).
+
+If a class has fewer unique flows than requested it is taken in full (no silent
+duplication) and a warning is printed. The sample is cached under
+``config.UNIFIED_SAMPLE_PATH`` so later scripts do not rebuild it.
 """
 import os
 
@@ -80,6 +85,10 @@ def build_sampled_dataset(files=None, path=FLOW_DIR, seed=RANDOM_SEED, cache=Tru
 
 
 def load_sampled_dataset(path=UNIFIED_SAMPLE_PATH):
+    """Load the cached ~204k-flow sample, or raise if it has not been built yet.
+
+    Prefer parquet; fall back to the pickle written when pyarrow is unavailable.
+    """
     if os.path.exists(path):
         return pd.read_parquet(path)
     alt = path.replace('.parquet', '.pkl')

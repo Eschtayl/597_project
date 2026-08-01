@@ -1,17 +1,21 @@
-"""Dataset partitioning.
+"""Dataset partitioning for the Phase 3 flow sample.
 
-Two complementary protocols over the sampled unified flows:
+Two complementary protocols (never mixed into one metric table):
 
-  * grouped stratified split -> PRIMARY per-class metrics. The group unit is the
-    LogicalFlowID; because aggregation yields exactly one row per LogicalFlowID,
-    a stratified row split is already group-safe (no logical flow spans two
-    partitions). Reused raw Flow IDs became distinct LogicalFlowIDs (distinct
-    conversations) and may legitimately fall in different partitions.
+Grouped stratified split → **PRIMARY** per-class metrics
+    Group unit = ``LogicalFlowID``. Aggregation yields exactly one row per ID, so
+    a stratified row split is already group-safe (no logical flow can land in two
+    partitions). Distinct LogicalFlowIDs that share a raw Flow ID string are
+    different conversations and may legitimately fall in different partitions.
 
-  * blocked temporal folds -> ROBUSTNESS. Within each class, order flows by
-    start time and use expanding-window folds (earlier blocks train, next block
-    tests). Pool out-of-time predictions across folds; class support per fold is
-    reported because thin classes (XSS) can be unstable.
+Blocked temporal folds → **ROBUSTNESS** only
+    Within each class, order flows by ``ts_first`` and cut contiguous time
+    blocks. Expanding-window protocol: train on folds ``< k``, test on fold
+    ``k``. Pool out-of-time predictions for headline robustness numbers; report
+    per-fold class support because thin classes (XSS) are unstable.
+
+Used by ``features.build_datasets`` (primary split) and
+``temporal_robustness.py`` (blocked folds).
 """
 import numpy as np
 import pandas as pd

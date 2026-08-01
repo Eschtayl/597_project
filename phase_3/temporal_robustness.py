@@ -1,16 +1,27 @@
-"""Blocked temporal-fold robustness evaluation.
+"""Blocked temporal-fold robustness evaluation (not primary metrics).
 
-Expanding-window protocol on the winning configuration (XGB multiclass,
-service-aware, locked unweighted params): folds are contiguous time blocks
-within each class (splits.blocked_temporal_folds); model k trains on folds < k
-and predicts fold k. Out-of-time predictions are pooled across folds for the
-headline numbers; per-fold class support is reported because thin classes (XSS)
-are unstable. Blocked-CV uncertainty is conservative (folds share training data).
+Checks whether the winning configuration (XGB multiclass, service-aware,
+locked unweighted params) holds up when trained on earlier traffic and tested
+on later traffic.
 
-Early stopping uses the latest 10% of each training block (by ts_first) — still
-strictly earlier than the test fold, so no temporal leakage.
+Protocol
+--------
+- Folds = contiguous time blocks within each class
+  (``splits.blocked_temporal_folds``).
+- Expanding window: model ``k`` trains on folds ``< k``, predicts fold ``k``.
+- Pool out-of-time predictions across folds for headline robustness numbers.
+- Report per-fold class support — thin classes (XSS) are unstable.
 
-Usage: python phase_3/temporal_robustness.py
+Early stopping uses the latest 10 % of each **class's** training block (by
+``ts_first``) — still strictly earlier than the test fold, so no temporal
+leakage. A global time cut would drop late-starting captures from the fit
+slice entirely.
+
+Caveat: blocked-CV folds share training data, so uncertainty is understated.
+Treat these as conservative robustness checks, not new headline metrics.
+Primary numbers remain the grouped stratified split.
+
+Usage: ``python phase_3/temporal_robustness.py``
 """
 import os
 import sys

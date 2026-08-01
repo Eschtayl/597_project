@@ -1,16 +1,28 @@
 """Phase 2 packet cohort for the cascade.
 
-Produces the existing-style Phase 2 packet predictions with a train/val/test split
-and the raw 5-tuple identifiers needed to map alerts to flows. ŷ₂ is packet-level.
+Rebuilds a Phase-2-style Isolation Forest detector on a fresh packet sample so
+the cascade has:
 
-Phase 2 model = Isolation Forest with phase_2's configuration (fast, deterministic;
-the autoencoder is a later robustness swap). Packets are drawn with a memory-bounded
-min-key sample across the full packet captures so we never load ~2.9 GB at once.
+- packet-level alerts (``y2_alert``) with a train/val/test split, and
+- the raw 5-tuple identifiers needed to map those alerts to logical flows.
 
-Outputs `phase_3/data/phase2_cohort.parquet`: one row per val/test packet with
-identifiers, label, split, anomaly score, and ŷ₂ alert flag.
+Why re-run Phase 2 here?
+------------------------
+The original Phase 2 run did not persist per-packet identifiers aligned to a
+val/test split that Phase 3 can join against. This script reproduces the
+detector (IF with phase_2 hyperparameters; AE is a later robustness swap) on a
+memory-bounded sample so the cascade protocol is self-contained.
 
-Usage: python phase_3/phase2_cohort.py
+Sampling
+--------
+Packets are drawn with a **min-key reservoir** across the full packet captures
+so we never load ~2.9 GB at once: keep the ``n_target`` rows with the smallest
+uniform random keys while streaming CSV chunks.
+
+Output: ``data/phase2_cohort.parquet`` — one row per packet with identifiers,
+label, ``phase2_split``, anomaly score, and ``y2_alert``.
+
+Usage: ``python phase_3/phase2_cohort.py``
 """
 import os
 import sys
@@ -39,8 +51,11 @@ except Exception:
 
 
 def min_key_sample(files, n_target, seed, chunksize=100_000):
-    """Uniform without-replacement sample of n_target rows streamed across files
-    (keep the n_target rows with the smallest random keys). Memory-bounded."""
+    """Uniform without-replacement sample streamed across files (memory-bounded).
+
+    Assign each row a uniform random key and keep the ``n_target`` smallest.
+    Equivalent to reservoir sampling but simple to implement with chunked CSVs.
+    """
     rng = np.random.default_rng(seed)
     kept = None
     for f in files:
@@ -55,6 +70,7 @@ def min_key_sample(files, n_target, seed, chunksize=100_000):
 
 
 def get_identifier_columns(df):
+    """Columns whose names contain identity keywords (mirrors phase_2/config)."""
     cols = []
     for c in df.columns:
         words = c.lower().replace(' ', '_').replace('-', '_').split('_')
@@ -64,6 +80,7 @@ def get_identifier_columns(df):
 
 
 def load_packet_cohort(seed=SEED):
+    """Draw the Phase 2-style packet sample (200k benign + 1.2k per attack type)."""
     all_csvs = sorted(glob.glob(os.path.join(PACKET_DIR, '*.csv')))
     benign_files = [f for f in all_csvs if os.path.basename(f).startswith('Benign')]
     attack_files = [f for f in all_csvs if not os.path.basename(f).startswith('Benign')]
@@ -93,6 +110,7 @@ def load_packet_cohort(seed=SEED):
 
 def main():
     df = load_packet_cohort()
+    # Hold out the 5-tuple before preprocessing so we can map alerts → flows later.
     identity = df[ID_COLS].reset_index(drop=True)
     labels = df['label'].reset_index(drop=True)
 
@@ -105,22 +123,22 @@ def main():
     y_true = (labels != BENIGN_LABEL).astype(int).to_numpy()
     print(f'  feature matrix: {x.shape}, identifiers held out: {len(id_cols)}')
 
-    # train / val / test split (stratified), identity kept aligned
+    # Stratified train / val / test; identity rows stay aligned by index.
     idx = np.arange(len(x))
     tr_idx, tmp_idx = train_test_split(idx, test_size=0.30, random_state=SEED, stratify=y_true)
     val_idx, te_idx = train_test_split(tmp_idx, test_size=0.50, random_state=SEED, stratify=y_true[tmp_idx])
     split = np.array(['train'] * len(x), dtype=object)
     split[val_idx] = 'val'; split[te_idx] = 'test'
 
-    # Phase 2 = Isolation Forest on benign train (phase_2 config)
+    # Unsupervised: fit IF on benign train only (Phase 2 convention).
     print('Training Phase 2 Isolation Forest on benign train packets...')
     benign_train = tr_idx[y_true[tr_idx] == 0]
     iso = IsolationForest(n_estimators=200, max_samples=256, contamination='auto',
                           random_state=SEED, n_jobs=-1)
     iso.fit(x.iloc[benign_train])
-    scores = -iso.decision_function(x)     # higher = more anomalous
+    scores = -iso.decision_function(x)     # negate so higher = more anomalous
 
-    # threshold by max-F1 on train (phase_2 convention)
+    # Alert threshold by max-F1 on train scores (labels used only for thresholding).
     st = scores[tr_idx]; yt = y_true[tr_idx]
     lo, hi = np.percentile(st, 1), np.percentile(st, 99)
     cands = np.linspace(lo, hi, 200)

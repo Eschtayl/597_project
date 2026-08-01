@@ -1,8 +1,17 @@
 """Shared metric computation for Phase 3 models (multiclass + binary collapse).
 
-All functions take predictions/probabilities that are already aligned to an
-explicit `classes` order (the classifier's `classes_`), so probability columns
-are never assumed by position.
+Every modelling script (baselines, XGBoost, heads, ablations, temporal) imports
+from here so metric definitions stay identical.
+
+Important conventions
+---------------------
+- Probability columns must follow the explicit ``classes`` order (usually
+  ``LabelEncoder.classes_`` / ``model.classes_``) — never assume position.
+- ``p_attack_from_proba`` implements the cascade score for multiclass heads:
+  ``AttackScore = 1 − P(benign)``. Binary heads use ``P(attack)`` directly.
+- ``binary_collapse`` is a descriptive benign-vs-any-attack view; the cascade
+  later picks its own operating point via τ, so a 0.5 threshold here is only
+  for standalone reporting.
 """
 import warnings
 

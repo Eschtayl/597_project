@@ -1,18 +1,27 @@
 """Pre-registered class-weighting comparison for XGBoost.
 
-Full inverse-frequency weighting over-weights attacks ~250x and collapses precision.
-Compare three schemes with the tuned hyperparameters held fixed (so only the weighting
-changes), selecting by threshold-independent ranking quality (binary PR-AUC) plus the
-best achievable binary operating point — because the cascade sets the final threshold.
+Why this experiment exists
+--------------------------
+Full inverse-frequency weighting over-weights attacks ~250× on this sample and
+collapses precision. Before locking the cascade model we compare three schemes
+with the tuned hyperparameters held fixed (so only the weighting changes).
 
-  none      : all weights 1
-  balanced  : w_k = N/(K*N_k)           (full inverse frequency)
-  dampened  : w_k = sqrt(N/(K*N_k))     (reduced benign / capped attack emphasis)
+Schemes
+-------
+- ``none``     — all weights 1
+- ``balanced`` — ``w_k = N/(K*N_k)`` (full inverse frequency)
+- ``dampened`` — ``w_k = sqrt(N/(K*N_k))`` (softer emphasis)
 
-All weights are normalized to mean 1 so total emphasis (and thus regularization scale)
-is comparable across schemes. Validation only; test stays sealed.
+Selection criterion: threshold-independent ranking quality (binary PR-AUC),
+then best achievable binary F1 — because the cascade, not the classifier,
+sets the final operating point. All weights are normalised to mean 1 so total
+emphasis (and regularisation scale) is comparable.
 
-Usage: python phase_3/weighting_comparison.py
+Result (locked): **none** wins. Downstream heads are unweighted.
+
+Validation only; test stays sealed.
+
+Usage: ``python phase_3/weighting_comparison.py``
 """
 import os
 import sys
