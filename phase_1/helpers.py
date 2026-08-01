@@ -219,6 +219,25 @@ def shuffle_and_seperate(df_combined, seed =0):
     return df_features, labels
 
 
+def shuffle_and_segregate(df_combined, seed=0):
+    """Shuffle rows and separate features from labels.
+
+    This correctly-spelled alias preserves the original
+    :func:`shuffle_and_seperate` function while providing the name used by the
+    rest of the project.
+    """
+    return shuffle_and_seperate(df_combined, seed=seed)
+
+
+def shuffle_and_separate(df_combined, seed=0):
+    """Shuffle rows and separate features from labels.
+
+    Preferred spelling for new code.  Both historical spellings remain
+    available for compatibility.
+    """
+    return shuffle_and_seperate(df_combined, seed=seed)
+
+
 def handle_missing_data(df_features):
     '''
     Missing data feature engineering

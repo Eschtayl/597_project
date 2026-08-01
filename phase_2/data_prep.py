@@ -2,33 +2,44 @@ import numpy as np
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 
-from config import (
-    PACKET_PATH,
-    LABEL_COL,
-    BENIGN_LABEL,
-    IDENTIFIER_KEYWORDS,
-    RANDOM_SEED,
-    TEST_SIZE,
-)
-from helpers import (
-    load_csv,
-    shuffle_and_segregate,
+try:
+    from .config import (
+        PACKET_PATH,
+        LABEL_COL,
+        BENIGN_LABEL,
+        IDENTIFIER_KEYWORDS,
+        RANDOM_SEED,
+        TEST_SIZE,
+    )
+except ImportError:  # Preserve direct script imports from phase_2/main.py.
+    from config import (
+        PACKET_PATH,
+        LABEL_COL,
+        BENIGN_LABEL,
+        IDENTIFIER_KEYWORDS,
+        RANDOM_SEED,
+        TEST_SIZE,
+    )
+
+from phase_1.helpers import (
     feature_cleaner,
+    load_csv,
     log_and_scale,
+    shuffle_and_separate,
 )
 
 
 def prepare_packet_data(path=PACKET_PATH, seed=RANDOM_SEED):
-    # Load, sample, preprocess packet-level data (Phase 1 pipeline)
+    """Load and preprocess packet data with the behavioral Phase 1 pipeline."""
     df_combined_sampled = load_csv(path)
-    df_features, labels = shuffle_and_segregate(df_combined_sampled, seed=seed)
-    df_numeric, df_identifiers = feature_cleaner(df_features)
-    df_preprocessed, fitted_scaler = log_and_scale(df_numeric, df_identifiers, labels)
+    df_features, labels = shuffle_and_separate(df_combined_sampled, seed=seed)
+    df_numeric, _ = feature_cleaner(df_features)
+    df_preprocessed, fitted_scaler = log_and_scale(df_numeric, labels)
     return df_preprocessed, fitted_scaler
 
 
 def get_identifier_columns(df):
-    # Find columns that identify a machine or user
+    """Return columns whose names match the project's identity keywords."""
     identifier_cols = []
     for col in df.columns:
         words = col.lower().replace(' ', '_').replace('-', '_').split('_')
@@ -38,7 +49,7 @@ def get_identifier_columns(df):
 
 
 def split_features_and_labels(df_preprocessed, label_col=LABEL_COL):
-    # Keep identifiers aside; train only on scaled numeric behaviour features
+    """Separate model features, original labels, and binary ground truth."""
     labels = df_preprocessed[label_col].copy()
     identifier_cols = get_identifier_columns(df_preprocessed)
     drop_cols = [label_col] + [c for c in identifier_cols if c in df_preprocessed.columns]
@@ -49,7 +60,7 @@ def split_features_and_labels(df_preprocessed, label_col=LABEL_COL):
 
 
 def split_train_test(x_features, labels, y_true, test_size=TEST_SIZE, seed=RANDOM_SEED):
-    # Stratified split so attack rate is similar in train and test
+    """Create a reproducible stratified train/test split."""
     x_train, x_test, labels_train, labels_test, y_train, y_test = train_test_split(
         x_features,
         labels,
@@ -62,7 +73,7 @@ def split_train_test(x_features, labels, y_true, test_size=TEST_SIZE, seed=RANDO
 
 
 def choose_threshold(anomaly_scores, y_true, n_candidates=200):
-    # Pick threshold on train scores by max F1 (labels used only for threshold selection)
+    """Choose the score threshold that maximizes F1 on the supplied cohort."""
     y_true = np.asarray(y_true)
     scores = np.asarray(anomaly_scores)
     lo, hi = np.percentile(scores, 1), np.percentile(scores, 99)
@@ -82,5 +93,5 @@ def choose_threshold(anomaly_scores, y_true, n_candidates=200):
 
 
 def generate_alerts(anomaly_scores, threshold):
-    # Flag rows at or above threshold as anomalous (1)
+    """Convert anomaly scores to binary alerts."""
     return (np.asarray(anomaly_scores) >= threshold).astype(int)

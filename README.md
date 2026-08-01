@@ -1,136 +1,171 @@
-# ECE 597 — Cascaded Network Intrusion Detection
+# ECE 597 Multi-Stage Network Intrusion Detection
 
-Two-stage IDS on CIC IoT traffic:
+This repository implements a packet-to-flow intrusion-detection cascade. The
+standard execution path is now:
 
-1. **Phase 1** — preprocessing (load, sample, clean, scale).
-2. **Phase 2** — unsupervised packet-level anomaly detection (Isolation Forest,
-   autoencoder, ensemble / latent variants), tuned for recall.
-3. **Phase 3** — supervised flow-level second stage that suppresses false
-   positives from Phase 2. Cascade can only remove alerts:
+1. **Phase 1 — behavioral packet preprocessing:** sample and label packets, clean missing
+   and infinite values, remove identity fields, apply `log1p`, and robust-scale.
+2. **Phase 2 — finalized Autoencoder:** train the tuned `(128, 64, 32)`
+   Autoencoder on benign packets and generate packet-level anomaly alerts.
+3. **Phase 3 — XGBoost:** map alerts to unified flows and use the finalized
+   service-aware multiclass XGBoost cascade to suppress false positives.
 
-   ```
-   ŷ_cascade = ŷ_phase2 AND ŷ_phase3
-   ```
+The historical experiments are preserved. Isolation Forest, K-Means, score
+fusion, Gradient Boosting, and neural-network implementations can still be run
+independently, but they are not part of the default pipeline.
 
-More detail on Phase 3 is in `phase_3/README.md`.
+## Quick start
 
----
-
-## Data layout
-
-CSVs are gitignored. Put them at the project root next to `helpers.py`:
-
-```
-flow_and_packet/          # preferred for Phase 3
-  flow_based/             *.pcap_Flow.csv
-  packet_based/           *.csv
-
-# Phase 2 also works with the flatter layout:
-packet_based/
-flow_based/
-```
-
-Files starting with `Benign` are labelled benign; attack labels come from the
-filename. The flow CSV `Label` column (`NeedManualLabel`) is not used as a target.
-
----
-
-## Setup
+Create an environment and install the full project dependencies:
 
 ```powershell
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-```bash
-source .venv/bin/activate
-pip install -r requirements.txt
+Place the CSV files in the preferred layout:
+
+```text
+flow_and_packet/
+├── packet_based/
+│   └── *.csv
+└── flow_based/
+    └── *.pcap_Flow.csv
 ```
 
----
+The root-level `packet_based/` and `flow_based/` layout is also supported when
+using the default configuration generated in code.
 
-## Phase 1 — Preprocessing
+Review `pipeline_config.json`, then run:
 
-`helpers.py` holds the shared pipeline; `PreprocessingPipeline.py` runs it.
-
-Steps: load + label → sample (200k benign + 4–6.2k attack) → shuffle → handle
-missing/infinite values → one-hot encode → drop identifiers → `log1p` +
-`RobustScaler` (reuse the fitted scaler on held-out data).
-
-```bash
-# edit `path` in PreprocessingPipeline.py to switch packet_based / flow_based
-python PreprocessingPipeline.py
+```powershell
+python run_pipeline.py --dry-run
+python run_pipeline.py
 ```
 
----
+The dry run validates configuration and prints the exact stage sequence without
+training. A full run writes cached data, models, scores, and evaluation JSON
+under `phase_3/data/`; human-readable Phase 3 reports remain under `phase_3/`.
 
-## Phase 2 — Unsupervised packet detection
+## Standard project structure
 
-Code lives in `phase_2/`. Models train on benign rows only; labels are used for
-threshold selection and evaluation. Higher anomaly score = more anomalous.
+```text
+ids_pipeline/
+├── config.py          # typed configuration for all three phases
+├── contracts.py       # small preprocessing/detector/classifier contracts
+├── components.py      # preprocessing and finalized-AE adapters + registries
+├── orchestrator.py    # ordered end-to-end execution
+└── cli.py             # `python -m ids_pipeline`
 
-```bash
+phase_1/
+├── helpers.py         # preserved Phase 1 function-based implementation
+└── PreprocessingPipeline.py
+
+phase_2/
+├── data_prep.py       # shared splits, threshold selection, alert generation
+└── models/
+    └── autoencoder.py # finalized configurable AE implementation
+
+phase_3/
+├── phase2_cohort.py   # behavioral preprocessing + AE alerts with mapping IDs
+├── flow_aggregation.py
+├── flow_sampling.py
+├── xgboost_model.py
+├── cascade_alignment.py
+├── cascade_heads.py
+└── cascade_eval.py
+
+phase_3_gb_nn/         # preserved earlier GB/NN experimental pipeline
+pipeline_config.json   # default component and hyperparameter selection
+run_pipeline.py        # primary entry point
+```
+
+## Configuration
+
+`pipeline_config.json` centralizes:
+
+- packet, flow, and artifact paths;
+- preprocessing, feature-extractor/detector, and classifier names;
+- random seed and sample sizes;
+- Autoencoder architecture and training parameters;
+- XGBoost tuning candidates and tuned-parameter reuse.
+
+Paths are resolved relative to `project_root`. The default finalized components
+are explicitly named:
+
+```json
+{
+  "preprocessing": "behavioral_packet",
+  "feature_extractor": "autoencoder",
+  "classifier": "xgboost"
+}
+```
+
+To use another configuration:
+
+```powershell
+python run_pipeline.py --config path/to/config.json
+```
+
+## Replacing a component
+
+The component boundaries deliberately stay small:
+
+- A preprocessor implements `PacketPreprocessor.prepare(...)`.
+- A packet detector implements `AnomalyDetector.fit(...)` and `.score(...)`.
+  Scores must use the shared convention: higher means more anomalous.
+- A supervised stage implements `ClassifierStage.run(...)`.
+
+Add a preprocessor or detector implementation and register its configuration
+name in `ids_pipeline/components.py`. Add a supervised stage and register it in
+`CLASSIFIER_STAGES` in `ids_pipeline/orchestrator.py`. Then select that name in
+`pipeline_config.json`; the orchestration and downstream artifact contracts do
+not need to change.
+
+The Phase 3 boundary is the packet cohort schema:
+
+```text
+mapping identifiers + label + y_true + phase2_split + anomaly_score + y2_alert
+```
+
+Any replacement detector that produces this schema can use the existing flow
+mapping, leakage guard, XGBoost heads, and cascade evaluation unchanged.
+
+## Running legacy experiments
+
+Legacy code is intentionally retained for comparison:
+
+```powershell
+# Phase 1 preprocessing only
+python phase_1/PreprocessingPipeline.py
+
+# Phase 2 experiments
 python phase_2/main.py eda
 python phase_2/main.py if
 python phase_2/main.py ae
 python phase_2/main.py tune
 python phase_2/main.py ensemble
 python phase_2/main.py latent
-python phase_2/main.py all
-```
+python phase_2/main.py kmeans
 
-| Path | Role |
-|------|------|
-| `phase_2/config.py` | Seeds, paths, hyperparameters |
-| `phase_2/data_prep.py` | Prep, split, threshold, alerts |
-| `phase_2/models/` | Isolation Forest, autoencoder, ensemble |
-| `phase_2/evaluation.py` | Metrics and figures → `saved_figs/` |
-| `phase_2/main.py` | Entry point |
-
-Results append to `phase_2/phase_2_results.txt` — delete it for a clean report.
-
----
-
-## Phase 3 — Supervised flow-level FP reduction
-
-Code lives in `phase_3/`. Builds unified logical flows, trains XGBoost heads,
-maps Phase 2 alert packets to flows, then picks a cascade threshold on
-validation alerts and evaluates once on the sealed test set.
-
-Sealed-test result: **59.6% FP-reduction at 92.7% TP-retention**
-(precision 0.070 → 0.148).
-
-```bash
-# checks
+# Detailed Phase 3 checks and analyses
 python phase_3/check_aggregation.py
 python phase_3/check_mapping.py
 python phase_3/check_sampling.py
 python phase_3/check_features.py
-
-# flow classifier
-python phase_3/baselines.py
-python phase_3/xgboost_model.py
-python phase_3/weighting_comparison.py
-python phase_3/heads.py
-
-# cascade
-python phase_3/phase2_cohort.py
-python phase_3/cascade_alignment.py
-python phase_3/cascade_heads.py
-python phase_3/cascade_eval.py
-
-# analysis
-python phase_3/ablations.py
 python phase_3/temporal_robustness.py
 python phase_3/interpretability.py
 ```
 
-| Area | Files |
-|------|-------|
-| Config & data | `config.py`, `flow_aggregation.py`, `flow_sampling.py`, `splits.py`, `features.py` |
-| Mapping | `packet_flow_mapping.py`, `cascade_alignment.py` |
-| Models | `baselines.py`, `xgboost_model.py`, `heads.py`, `cascade_heads.py` |
-| Cascade | `phase2_cohort.py`, `cascade_eval.py` |
-| Analysis | `ablations.py`, `temporal_robustness.py`, `interpretability.py` |
+See `phase_3/README.md` for the detailed flow identity, leakage, threshold, and
+cascade policies.
 
-Reports are in `phase_3/*_report.txt`.
+## Verification
+
+Fast component tests do not require the full dataset:
+
+```powershell
+python -m pytest -q
+python -m compileall -q ids_pipeline phase_1 phase_2 phase_3
+```

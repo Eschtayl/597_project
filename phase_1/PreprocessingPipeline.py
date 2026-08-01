@@ -1,20 +1,30 @@
-from helpers import *
+"""Standalone entry point for the original Phase 1 preprocessing workflow."""
+from pathlib import Path
 
-path = 'packet_based' # Path to packet files. Uncomment below for flow based
-#path = 'flow_based' # path to flow flies
+try:
+    from .helpers import feature_cleaner, load_csv, log_and_scale, shuffle_and_separate
+except ImportError:  # Preserve ``python phase_1/PreprocessingPipeline.py``.
+    from helpers import feature_cleaner, load_csv, log_and_scale, shuffle_and_separate
 
-# Load benign and attack csvs, and sample as reqested
-df_combined_sampled = load_csv(path)
 
-# Shuffles data and splits features from labels, so features can be cleaned
-df_features, labels = shuffle_and_seperate(df_combined_sampled)
+def main(path=None):
+    """Preprocess a sampled packet dataset and print basic integrity checks."""
+    root = Path(__file__).resolve().parents[1]
+    nested = root / "flow_and_packet" / "packet_based"
+    data_path = (
+        Path(path)
+        if path
+        else (nested if nested.is_dir() else root / "packet_based")
+    )
 
-# Seperates network behaviour features, from features that identify a machine or user. Numeric features cleaned.
-df_features_clean, df_identifiers = feature_cleaner(df_features)
+    df_combined_sampled = load_csv(str(data_path))
+    df_features, labels = shuffle_and_separate(df_combined_sampled)
+    df_features_clean, _ = feature_cleaner(df_features)
+    df_preprocessed, _ = log_and_scale(df_features_clean, labels)
 
-# numeric fetaures are passed through a logarithm then scaled. label and identifier columns are recombined into final df_preprocessed result
-# fitted_scaler, computed during training, is saved to be used with test data
-df_preprocessed, fitted_scaler = log_and_scale(df_features_clean, labels)
+    print(f"Final preprocessed shape: {df_preprocessed.shape}")
+    print(f"Total NaNs in final dataset: {df_preprocessed.isna().sum().sum()}")
 
-print(f"Final preprocessed shape: {df_preprocessed.shape}")
-print(f"Total NaNs in final dataset: {df_preprocessed.isna().sum().sum()}") # integrity
+
+if __name__ == "__main__":
+    main()

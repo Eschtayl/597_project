@@ -1,14 +1,14 @@
 import os
 import sys
 
-# phase_2/ is this file's directory; project root holds helpers.py and data folders
+# phase_2/ is this file's directory; project root holds phase_1/ and data folders
 PHASE2_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(PHASE2_DIR)
 
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-# Data folders live at project root (next to helpers.py)
+# Data folders live at the project root.
 PACKET_PATH = os.path.join(PROJECT_ROOT, 'packet_based')
 FLOW_PATH = os.path.join(PROJECT_ROOT, 'flow_based')
 

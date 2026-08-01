@@ -3,19 +3,33 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from config import (
-    RANDOM_SEED,
-    AE_HIDDEN_DIMS,
-    AE_HIDDEN_DIMS_GRID,
-    AE_EPOCHS,
-    AE_BATCH_SIZE,
-    AE_LEARNING_RATE,
-    AE_WEIGHT_DECAY,
-    AE_VAL_FRACTION,
-)
+try:
+    from ..config import (
+        RANDOM_SEED,
+        AE_HIDDEN_DIMS,
+        AE_HIDDEN_DIMS_GRID,
+        AE_EPOCHS,
+        AE_BATCH_SIZE,
+        AE_LEARNING_RATE,
+        AE_WEIGHT_DECAY,
+        AE_VAL_FRACTION,
+    )
+except ImportError:  # Preserve direct imports used by phase_2/main.py.
+    from config import (
+        RANDOM_SEED,
+        AE_HIDDEN_DIMS,
+        AE_HIDDEN_DIMS_GRID,
+        AE_EPOCHS,
+        AE_BATCH_SIZE,
+        AE_LEARNING_RATE,
+        AE_WEIGHT_DECAY,
+        AE_VAL_FRACTION,
+    )
 
 
 class PacketAutoencoder(nn.Module):
+    """Fully connected autoencoder for packet-level behaviour features."""
+
     def __init__(self, input_dim, hidden_dims=AE_HIDDEN_DIMS):
         super().__init__()
         encoder_layers = []
@@ -34,10 +48,12 @@ class PacketAutoencoder(nn.Module):
         self.decoder = nn.Sequential(*decoder_layers)
 
     def forward(self, x):
+        """Reconstruct a batch of packet features."""
         z = self.encoder(x)
         return self.decoder(z)
 
     def encode(self, x):
+        """Return the bottleneck representation for a batch."""
         return self.encoder(x)
 
 
@@ -48,10 +64,12 @@ def _benign_train_matrix(x_train, y_train):
     return x_train.to_numpy(dtype=np.float32)
 
 
-def _benign_fit_val_split(x_train, y_train, seed):
+def _benign_fit_val_split(x_train, y_train, seed, val_fraction=AE_VAL_FRACTION):
     # Same split for every tuning config (fixed seed) so val MSE is comparable
     x_benign = _benign_train_matrix(x_train, y_train)
-    n_val = max(1, int(len(x_benign) * AE_VAL_FRACTION))
+    if len(x_benign) < 2:
+        raise ValueError("Autoencoder training requires at least two benign rows.")
+    n_val = min(len(x_benign) - 1, max(1, int(len(x_benign) * val_fraction)))
     rng = np.random.default_rng(seed)
     perm = rng.permutation(len(x_benign))
     x_val = x_benign[perm[:n_val]]
@@ -59,27 +77,37 @@ def _benign_fit_val_split(x_train, y_train, seed):
     return x_fit, x_val
 
 
-def _fit_autoencoder(x_fit, x_val, hidden_dims, seed, verbose=True):
+def _fit_autoencoder(
+    x_fit,
+    x_val,
+    hidden_dims,
+    seed,
+    verbose=True,
+    epochs=AE_EPOCHS,
+    batch_size=AE_BATCH_SIZE,
+    learning_rate=AE_LEARNING_RATE,
+    weight_decay=AE_WEIGHT_DECAY,
+):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     device = torch.device('cpu')
     model = PacketAutoencoder(input_dim=x_fit.shape[1], hidden_dims=hidden_dims).to(device)
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=AE_LEARNING_RATE, weight_decay=AE_WEIGHT_DECAY
+        model.parameters(), lr=learning_rate, weight_decay=weight_decay
     )
     criterion = nn.MSELoss()
 
     train_loader = DataLoader(
         TensorDataset(torch.from_numpy(x_fit)),
-        batch_size=AE_BATCH_SIZE,
+        batch_size=batch_size,
         shuffle=True,
     )
     x_val_t = torch.from_numpy(x_val).to(device)
 
     val_loss = float('nan')
     model.train()
-    for epoch in range(1, AE_EPOCHS + 1):
+    for epoch in range(1, epochs + 1):
         epoch_loss = 0.0
         n_batches = 0
         for (batch,) in train_loader:
@@ -96,23 +124,47 @@ def _fit_autoencoder(x_fit, x_val, hidden_dims, seed, verbose=True):
         with torch.no_grad():
             val_loss = criterion(model(x_val_t), x_val_t).item()
         model.train()
-        if verbose and (epoch == 1 or epoch % 5 == 0 or epoch == AE_EPOCHS):
-            print(f'  epoch {epoch}/{AE_EPOCHS} train_mse={epoch_loss / n_batches:.6f} val_mse={val_loss:.6f}')
+        if verbose and (epoch == 1 or epoch % 5 == 0 or epoch == epochs):
+            print(f'  epoch {epoch}/{epochs} train_mse={epoch_loss / n_batches:.6f} val_mse={val_loss:.6f}')
 
     model.eval()
     return model, val_loss
 
 
-def train_autoencoder(x_train, y_train=None, hidden_dims=AE_HIDDEN_DIMS, seed=RANDOM_SEED):
-    # Fit on benign training rows only; MSE reconstruction loss
-    x_fit, x_val = _benign_fit_val_split(x_train, y_train, seed)
+def train_autoencoder(
+    x_train,
+    y_train=None,
+    hidden_dims=AE_HIDDEN_DIMS,
+    seed=RANDOM_SEED,
+    *,
+    epochs=AE_EPOCHS,
+    batch_size=AE_BATCH_SIZE,
+    learning_rate=AE_LEARNING_RATE,
+    weight_decay=AE_WEIGHT_DECAY,
+    val_fraction=AE_VAL_FRACTION,
+    verbose=True,
+):
+    """Fit an autoencoder on benign training rows only."""
+    x_fit, x_val = _benign_fit_val_split(
+        x_train, y_train, seed, val_fraction=val_fraction
+    )
     print(f'Autoencoder training on {len(x_fit)} benign rows ({len(x_val)} val), dims={hidden_dims}')
-    model, _ = _fit_autoencoder(x_fit, x_val, hidden_dims, seed)
+    model, _ = _fit_autoencoder(
+        x_fit,
+        x_val,
+        hidden_dims,
+        seed,
+        verbose=verbose,
+        epochs=epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+    )
     return model
 
 
 def tune_autoencoder(x_train, y_train=None, grid=AE_HIDDEN_DIMS_GRID, seed=RANDOM_SEED):
-    # Systematic architecture search selected by benign validation MSE (label-free)
+    """Select an architecture using benign validation reconstruction MSE."""
     x_fit, x_val = _benign_fit_val_split(x_train, y_train, seed)
     print(f'Tuning autoencoder over {len(grid)} architectures on {len(x_fit)} benign rows ({len(x_val)} val)')
 
@@ -135,7 +187,7 @@ def tune_autoencoder(x_train, y_train=None, grid=AE_HIDDEN_DIMS_GRID, seed=RANDO
 
 
 def get_anomaly_scores(model, x_data, batch_size=AE_BATCH_SIZE):
-    # Mean squared reconstruction error per row (higher = more anomalous)
+    """Return per-row reconstruction MSE; higher means more anomalous."""
     model.eval()
     x_np = np.array(
         x_data.to_numpy(dtype=np.float32) if hasattr(x_data, 'to_numpy') else x_data,
@@ -153,7 +205,7 @@ def get_anomaly_scores(model, x_data, batch_size=AE_BATCH_SIZE):
 
 
 def get_latent_embedding(model, x_data, batch_size=AE_BATCH_SIZE):
-    # Encoder output (bottleneck representation) per row
+    """Return the encoder bottleneck representation for every row."""
     model.eval()
     x_np = np.array(
         x_data.to_numpy(dtype=np.float32) if hasattr(x_data, 'to_numpy') else x_data,

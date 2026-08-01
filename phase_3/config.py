@@ -4,7 +4,7 @@ Imported first by every ``phase_3`` module. Two jobs:
 
 1. Hold every tunable / frozen constant (paths, labels, gap cutoff, sample sizes,
    split fractions, seed) in one place so scripts do not hard-code magic numbers.
-2. Put the project root on ``sys.path`` so ``from helpers import ...`` works
+2. Put the project root on ``sys.path`` so shared phase packages are importable
    whether you launch from the repo root or from inside ``phase_3/``.
 
 If you change a constant here, re-run the downstream scripts that depend on it
@@ -14,7 +14,7 @@ pipeline story.
 import os
 import sys
 
-# phase_3/ is this file's directory; project root holds helpers.py and data folders
+# phase_3/ is this file's directory; project root holds phase packages and data
 PHASE3_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(PHASE3_DIR)
 
@@ -28,17 +28,23 @@ if PROJECT_ROOT not in sys.path:
 # ---------------------------------------------------------------------------
 _FLOW_NESTED = os.path.join(PROJECT_ROOT, 'flow_and_packet', 'flow_based')
 _FLOW_ROOT = os.path.join(PROJECT_ROOT, 'flow_based')
-FLOW_DIR = _FLOW_NESTED if os.path.isdir(_FLOW_NESTED) else _FLOW_ROOT
+FLOW_DIR = os.environ.get(
+    'IDS_FLOW_DIR',
+    _FLOW_NESTED if os.path.isdir(_FLOW_NESTED) else _FLOW_ROOT,
+)
 
 _PACKET_NESTED = os.path.join(PROJECT_ROOT, 'flow_and_packet', 'packet_based')
 _PACKET_ROOT = os.path.join(PROJECT_ROOT, 'packet_based')
-PACKET_DIR = _PACKET_NESTED if os.path.isdir(_PACKET_NESTED) else _PACKET_ROOT
+PACKET_DIR = os.environ.get(
+    'IDS_PACKET_DIR',
+    _PACKET_NESTED if os.path.isdir(_PACKET_NESTED) else _PACKET_ROOT,
+)
 
 # Phase 3 outputs live inside phase_3/ (reports committed; data/ is gitignored)
 RESULTS_FILE = os.path.join(PHASE3_DIR, 'phase_3_results.txt')
 SAVED_FIGS_DIR = os.path.join(PHASE3_DIR, 'saved_figs')
 
-RANDOM_SEED = 23
+RANDOM_SEED = int(os.environ.get('IDS_RANDOM_SEED', '23'))
 
 # ---------------------------------------------------------------------------
 # Labelling
@@ -108,5 +114,5 @@ VAL_SIZE = 0.15
 N_TEMPORAL_FOLDS = 4
 
 # Cached sampled Phase 3 dataset (built by flow_sampling / check_sampling)
-DATA_DIR = os.path.join(PHASE3_DIR, 'data')
+DATA_DIR = os.environ.get('IDS_ARTIFACTS_DIR', os.path.join(PHASE3_DIR, 'data'))
 UNIFIED_SAMPLE_PATH = os.path.join(DATA_DIR, 'sampled_unified_flows.parquet')

@@ -27,21 +27,38 @@ import glob
 import numpy as np
 import pandas as pd
 
-from config import (
-    FLOW_DIR,
-    FLOW_ID_COL,
-    TIMESTAMP_COL,
-    TIMESTAMP_FORMAT,
-    GAP_CUTOFF_SECONDS,
-    DURATION_COL,
-    MICROSECONDS_PER_SECOND,
-    W_FWD,
-    W_BWD,
-    BENIGN_LABEL,
-    ATTACK_SUBSTRING_MAP,
-    LABEL_COL,
-    NATIVE_LABEL_COL,
-)
+try:
+    from .config import (
+        FLOW_DIR,
+        FLOW_ID_COL,
+        TIMESTAMP_COL,
+        TIMESTAMP_FORMAT,
+        GAP_CUTOFF_SECONDS,
+        DURATION_COL,
+        MICROSECONDS_PER_SECOND,
+        W_FWD,
+        W_BWD,
+        BENIGN_LABEL,
+        ATTACK_SUBSTRING_MAP,
+        LABEL_COL,
+        NATIVE_LABEL_COL,
+    )
+except ImportError:  # Preserve direct script execution.
+    from config import (
+        FLOW_DIR,
+        FLOW_ID_COL,
+        TIMESTAMP_COL,
+        TIMESTAMP_FORMAT,
+        GAP_CUTOFF_SECONDS,
+        DURATION_COL,
+        MICROSECONDS_PER_SECOND,
+        W_FWD,
+        W_BWD,
+        BENIGN_LABEL,
+        ATTACK_SUBSTRING_MAP,
+        LABEL_COL,
+        NATIVE_LABEL_COL,
+    )
 
 # ---------------------------------------------------------------------------
 # Per-feature aggregation rules.
@@ -310,4 +327,3 @@ def feature_dictionary():
     for c in DROP_COLS:
         d[c] = ('dropped (Tier 3)', 'pooled sufficient statistics unavailable (no inter-segment gaps)')
     return d
-

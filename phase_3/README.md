@@ -13,9 +13,11 @@ while retaining true detections. The cascade can only *remove* alerts, never add
 ŷ_cascade = ŷ_phase2 AND ŷ_phase3
 ```
 
-Headline sealed-test result (frozen config): **59.6 % FP-reduction at 92.7 %
-TP-retention** (precision 0.070 → 0.148). Full numbers live in
-`cascade_report.txt` and `data/cascade_results.json`.
+Historical sealed-test result from the earlier Isolation Forest cohort:
+**59.6 % FP-reduction at 92.7 % TP-retention** (precision 0.070 → 0.148).
+Those archived numbers live in `cascade_report.txt` and
+`data/cascade_results.json`. Run `python run_pipeline.py` to regenerate the
+artifacts for the finalized Autoencoder cohort.
 
 ---
 
@@ -65,7 +67,7 @@ aggregates that context across all segments of a conversation.
 | **Service-aware features** | Behaviour-only **plus** universal port *semantics* (HTTP/DNS flags, well-known/registered/ephemeral ranges, protocol). Never exact ports. |
 | **Head** | One trained scorer: `{multiclass, binary} × {behaviour, service}` → four heads. |
 | **AttackScore / s_*** | Higher = more attack-like. Multiclass: `1 − P(benign)`. Binary: `P(attack)`. |
-| **Phase 2 alert** | Packet with `y2_alert == 1` from the Isolation Forest cohort. |
+| **Phase 2 alert** | Packet with `y2_alert == 1` from the finalized Autoencoder cohort. |
 | **Mapping status** | How cleanly a packet maps to flow(s): `unique_match`, `multiple_same_capture`, `multiple_same_label`, `multiple_conflicting_labels`, `no_match`, `invalid_key`. |
 | **Policy A** | Strict cascade: only `unique_match` may suppress; everything else retains the Phase 2 alert. |
 | **Policy B** | Like A, but for `multiple_same_capture` suppresses only if *every* candidate flow scores below τ (consensus “benign”). |
@@ -84,7 +86,7 @@ flow CSVs                    packet CSVs
     │                             │
     ▼                             ▼
 flow_aggregation.py          phase2_cohort.py
- (LogicalFlowID +               (IF alerts on
+ (LogicalFlowID +               (AE alerts on
   segment aggregation)           packet sample)
     │                             │
     ▼                             │
@@ -161,7 +163,7 @@ script prints PASS/FAIL checkpoint verifications and writes a `*_report.txt`
 | 6 | `python phase_3/xgboost_model.py` | XGBoost hyperparameter search (params reused by everything downstream) |
 | 7 | `python phase_3/weighting_comparison.py` | none/balanced/dampened class weighting — **none wins (locked)** |
 | 8 | `python phase_3/heads.py` | Train the four heads: {multiclass, binary} × {behaviour-only, service-aware} |
-| 9 | `python phase_3/phase2_cohort.py` | Reproduce Phase 2 (Isolation Forest) packet alerts with a train/val/test split |
+| 9 | `python phase_3/phase2_cohort.py` | Runs preprocessing + finalized Autoencoder packet alerts with a train/val/test split |
 | 10 | `python phase_3/cascade_alignment.py` | Map val/test alert packets to the full 986k-flow index; run the leakage guard |
 | 11 | `python phase_3/cascade_heads.py` | Remove leaking flows, retrain heads (locked params), score candidate flows |
 | 12 | `python phase_3/cascade_eval.py` | Threshold sweep + Policy A/B bake-off on val alerts; single sealed-test evaluation |
@@ -206,7 +208,7 @@ are report/analysis only and assume the cascade artifacts already exist.
 
 | File | Responsibility |
 |------|----------------|
-| `phase2_cohort.py` | Memory-bounded packet sample + Isolation Forest → `phase2_cohort.parquet`. |
+| `phase2_cohort.py` | Memory-bounded packet sample + preprocessing + finalized Autoencoder → `phase2_cohort.parquet`. |
 | `cascade_alignment.py` | Alert→flow alignment against the *full* flow index + leakage guard. |
 | `cascade_heads.py` | Remediate leakage, retrain heads with fitted preprocessors, score candidates. |
 | `cascade_eval.py` | τ + Policy A/B bake-off on val; freeze winner; sealed test metrics/CIs. |

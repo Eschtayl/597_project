@@ -1,0 +1,26 @@
+{
+  "project_root": ".",
+  "preprocessing": "behavioral_packet",
+  "feature_extractor": "autoencoder",
+  "classifier": "xgboost",
+  "random_seed": 23,
+  "data": {
+    "packet_dir": "flow_and_packet/packet_based",
+    "flow_dir": "flow_and_packet/flow_based",
+    "artifacts_dir": "phase_3/data",
+    "benign_target": 200000,
+    "attack_target_per_type": 1200
+  },
+  "autoencoder": {
+    "hidden_dims": [128, 64, 32],
+    "epochs": 20,
+    "batch_size": 256,
+    "learning_rate": 0.001,
+    "weight_decay": 0.00001,
+    "validation_fraction": 0.1
+  },
+  "xgboost": {
+    "tuning_candidates": 12,
+    "reuse_tuned_parameters": true
+  }
+}

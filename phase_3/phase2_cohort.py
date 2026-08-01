@@ -1,49 +1,39 @@
-"""Phase 2 packet cohort for the cascade.
+"""Build finalized Autoencoder packet alerts for the XGBoost cascade.
 
-Rebuilds a Phase-2-style Isolation Forest detector on a fresh packet sample so
-the cascade has:
+This stage keeps the original memory-bounded packet sampling approach, applies
+behavioral Phase 1 feature cleaning/scaling, and fits the finalized tuned
+Autoencoder on benign training packets.  It persists raw packet identifiers
+beside the scores so Phase 3 can map alerts to logical flows.
 
-- packet-level alerts (``y2_alert``) with a train/val/test split, and
-- the raw 5-tuple identifiers needed to map those alerts to logical flows.
-
-Why re-run Phase 2 here?
-------------------------
-The original Phase 2 run did not persist per-packet identifiers aligned to a
-val/test split that Phase 3 can join against. This script reproduces the
-detector (IF with phase_2 hyperparameters; AE is a later robustness swap) on a
-memory-bounded sample so the cascade protocol is self-contained.
-
-Sampling
---------
-Packets are drawn with a **min-key reservoir** across the full packet captures
-so we never load ~2.9 GB at once: keep the ``n_target`` rows with the smallest
-uniform random keys while streaming CSV chunks.
-
-Output: ``data/phase2_cohort.parquet`` — one row per packet with identifiers,
-label, ``phase2_split``, anomaly score, and ``y2_alert``.
-
-Usage: ``python phase_3/phase2_cohort.py``
+Output: ``data/phase2_cohort.parquet`` with one row per sampled packet.
 """
+from __future__ import annotations
+
+import argparse
+import glob
 import os
 import sys
-import glob
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import IsolationForest
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score
 
-from config import PACKET_DIR, DATA_DIR, RANDOM_SEED, BENIGN_LABEL
-from flow_aggregation import label_from_filename
-from helpers import feature_cleaner, log_and_scale
+try:
+    from .config import BENIGN_LABEL, DATA_DIR, PACKET_DIR, RANDOM_SEED
+    from .flow_aggregation import label_from_filename
+except ImportError:  # Preserve ``python phase_3/phase2_cohort.py``.
+    from config import BENIGN_LABEL, DATA_DIR, PACKET_DIR, RANDOM_SEED
+    from flow_aggregation import label_from_filename
+from ids_pipeline.components import create_anomaly_detector, create_preprocessor
+from ids_pipeline.config import AutoencoderConfig
+from phase_2.data_prep import choose_threshold, generate_alerts
 
 SEED = RANDOM_SEED
 ID_COLS = ['src_ip', 'dst_ip', 'src_port', 'dst_port', 'l4_tcp', 'l4_udp']
-IDENTIFIER_KEYWORDS = ['ip', 'port', 'mac', 'timestamp', 'flow_id', 'protocol',
-                       'server', 'host', 'user_agent', 'oui', 'uri', 'content_type']
 BENIGN_TARGET = 200_000
 ATTACK_TARGET_PER_TYPE = 1_200
+
 try:
     sys.stdout.reconfigure(encoding='utf-8')
 except Exception:
@@ -51,131 +41,221 @@ except Exception:
 
 
 def min_key_sample(files, n_target, seed, chunksize=100_000):
-    """Uniform without-replacement sample streamed across files (memory-bounded).
-
-    Assign each row a uniform random key and keep the ``n_target`` smallest.
-    Equivalent to reservoir sampling but simple to implement with chunked CSVs.
-    """
+    """Uniformly sample rows without loading all source CSVs at once."""
+    if n_target <= 0:
+        raise ValueError('n_target must be positive.')
     rng = np.random.default_rng(seed)
     kept = None
-    for f in files:
-        for chunk in pd.read_csv(f, chunksize=chunksize, low_memory=False):
+    for file_path in files:
+        for chunk in pd.read_csv(file_path, chunksize=chunksize, low_memory=False):
             chunk = chunk.copy()
             chunk['__k'] = rng.random(len(chunk))
-            chunk['__src'] = os.path.basename(f)
             kept = chunk if kept is None else pd.concat([kept, chunk], ignore_index=True)
             if len(kept) > n_target:
                 kept = kept.nsmallest(n_target, '__k')
+    if kept is None:
+        raise ValueError('Cannot sample from an empty file list.')
     return kept
 
 
-def get_identifier_columns(df):
-    """Columns whose names contain identity keywords (mirrors phase_2/config)."""
-    cols = []
-    for c in df.columns:
-        words = c.lower().replace(' ', '_').replace('-', '_').split('_')
-        if any(k in words for k in IDENTIFIER_KEYWORDS):
-            cols.append(c)
-    return cols
-
-
-def load_packet_cohort(seed=SEED):
-    """Draw the Phase 2-style packet sample (200k benign + 1.2k per attack type)."""
-    all_csvs = sorted(glob.glob(os.path.join(PACKET_DIR, '*.csv')))
-    benign_files = [f for f in all_csvs if os.path.basename(f).startswith('Benign')]
-    attack_files = [f for f in all_csvs if not os.path.basename(f).startswith('Benign')]
+def load_packet_cohort(
+    path=PACKET_DIR,
+    seed=SEED,
+    benign_target=BENIGN_TARGET,
+    attack_target_per_type=ATTACK_TARGET_PER_TYPE,
+):
+    """Draw a memory-bounded packet cohort with balanced attack classes."""
+    all_csvs = sorted(glob.glob(os.path.join(path, '*.csv')))
+    benign_files = [
+        file_path
+        for file_path in all_csvs
+        if os.path.basename(file_path).startswith('Benign')
+    ]
+    attack_files = [
+        file_path
+        for file_path in all_csvs
+        if not os.path.basename(file_path).startswith('Benign')
+    ]
+    if not benign_files or not attack_files:
+        raise FileNotFoundError(
+            f'Expected benign and attack packet CSV files in: {path}'
+        )
     print(f'Packet captures: {len(benign_files)} benign, {len(attack_files)} attack')
 
     print('Sampling benign packets (memory-bounded)...')
-    benign = min_key_sample(benign_files, BENIGN_TARGET, seed)
+    benign = min_key_sample(benign_files, benign_target, seed)
     benign['label'] = BENIGN_LABEL
 
     print('Sampling attack packets per type...')
     by_label = {}
-    for f in attack_files:
-        by_label.setdefault(label_from_filename(f), []).append(f)
+    for file_path in attack_files:
+        by_label.setdefault(label_from_filename(file_path), []).append(file_path)
     attack_parts = []
-    for lab, files in by_label.items():
-        s = min_key_sample(files, ATTACK_TARGET_PER_TYPE, seed + hash(lab) % 1000)
-        s['label'] = lab
-        attack_parts.append(s)
+    for offset, (label, files) in enumerate(sorted(by_label.items()), start=1):
+        # Python hashes are process-randomized; a stable offset is reproducible.
+        sample = min_key_sample(files, attack_target_per_type, seed + offset)
+        sample['label'] = label
+        attack_parts.append(sample)
+
     attacks = pd.concat(attack_parts, ignore_index=True)
+    frame = pd.concat([benign, attacks], ignore_index=True).drop(
+        columns=['__k'], errors='ignore'
+    )
+    frame = frame.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+    print(
+        f'  packet cohort: {len(frame):,} '
+        f'({(frame.label == BENIGN_LABEL).sum():,} benign, '
+        f'{(frame.label != BENIGN_LABEL).sum():,} attack)'
+    )
+    return frame
 
-    df = pd.concat([benign, attacks], ignore_index=True).drop(columns=['__k', '__src'], errors='ignore')
-    df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
-    print(f'  packet cohort: {len(df):,} ({(df.label==BENIGN_LABEL).sum():,} benign, '
-          f'{(df.label!=BENIGN_LABEL).sum():,} attack)')
-    return df
 
+def build_phase2_cohort(
+    *,
+    packet_dir=PACKET_DIR,
+    output_path=None,
+    seed=SEED,
+    benign_target=BENIGN_TARGET,
+    attack_target_per_type=ATTACK_TARGET_PER_TYPE,
+    autoencoder_config=None,
+    preprocessor_name='behavioral_packet',
+    detector_name='autoencoder',
+):
+    """Run behavioral preprocessing and the finalized AE, then persist alerts."""
+    ae_config = autoencoder_config or AutoencoderConfig()
+    frame = load_packet_cohort(
+        path=packet_dir,
+        seed=seed,
+        benign_target=benign_target,
+        attack_target_per_type=attack_target_per_type,
+    )
+    labels = frame['label'].reset_index(drop=True)
 
-def main():
-    df = load_packet_cohort()
-    # Hold out the 5-tuple before preprocessing so we can map alerts → flows later.
-    identity = df[ID_COLS].reset_index(drop=True)
-    labels = df['label'].reset_index(drop=True)
-
-    print('Preprocessing packet features (Phase 1 pipeline)...')
-    df_numeric, df_identifiers = feature_cleaner(df.drop(columns=['label']))
-    df_final, _ = log_and_scale(df_numeric, df_identifiers, labels)
-
-    id_cols = get_identifier_columns(df_final)
-    x = df_final.drop(columns=id_cols + ['label'], errors='ignore').select_dtypes(include=[np.number])
+    print('Preprocessing behavioral packet features (Phase 1 pipeline)...')
+    preprocessor = create_preprocessor(preprocessor_name)
+    batch = preprocessor.prepare(
+        frame.drop(columns=['label']),
+        labels,
+        identifier_columns=ID_COLS,
+    )
+    features = batch.features
     y_true = (labels != BENIGN_LABEL).astype(int).to_numpy()
-    print(f'  feature matrix: {x.shape}, identifiers held out: {len(id_cols)}')
+    print(
+        f'  feature matrix: {features.shape}, '
+        f'identifiers held out: {len(ID_COLS)}'
+    )
 
-    # Stratified train / val / test; identity rows stay aligned by index.
-    idx = np.arange(len(x))
-    tr_idx, tmp_idx = train_test_split(idx, test_size=0.30, random_state=SEED, stratify=y_true)
-    val_idx, te_idx = train_test_split(tmp_idx, test_size=0.50, random_state=SEED, stratify=y_true[tmp_idx])
-    split = np.array(['train'] * len(x), dtype=object)
-    split[val_idx] = 'val'; split[te_idx] = 'test'
+    indices = np.arange(len(features))
+    train_idx, remainder_idx = train_test_split(
+        indices,
+        test_size=0.30,
+        random_state=seed,
+        stratify=y_true,
+    )
+    val_idx, test_idx = train_test_split(
+        remainder_idx,
+        test_size=0.50,
+        random_state=seed,
+        stratify=y_true[remainder_idx],
+    )
+    split = np.full(len(features), 'train', dtype=object)
+    split[val_idx] = 'val'
+    split[test_idx] = 'test'
 
-    # Unsupervised: fit IF on benign train only (Phase 2 convention).
-    print('Training Phase 2 Isolation Forest on benign train packets...')
-    benign_train = tr_idx[y_true[tr_idx] == 0]
-    iso = IsolationForest(n_estimators=200, max_samples=256, contamination='auto',
-                          random_state=SEED, n_jobs=-1)
-    iso.fit(x.iloc[benign_train])
-    scores = -iso.decision_function(x)     # negate so higher = more anomalous
+    print(
+        'Training finalized Phase 2 Autoencoder on benign train packets '
+        f'(dims={ae_config.hidden_dims})...'
+    )
+    detector = create_anomaly_detector(detector_name, ae_config, seed)
+    detector.fit(features.iloc[train_idx], y_true[train_idx])
+    scores = detector.score(features)
+    threshold = choose_threshold(scores[train_idx], y_true[train_idx])
+    alerts = generate_alerts(scores, threshold)
 
-    # Alert threshold by max-F1 on train scores (labels used only for thresholding).
-    st = scores[tr_idx]; yt = y_true[tr_idx]
-    lo, hi = np.percentile(st, 1), np.percentile(st, 99)
-    cands = np.linspace(lo, hi, 200)
-    best_t, best_f1 = cands[0], -1
-    for t in cands:
-        f = f1_score(yt, (st >= t).astype(int), zero_division=0)
-        if f > best_f1:
-            best_f1, best_t = f, t
-    alert = (scores >= best_t).astype(int)
-    print(f'  Phase 2 threshold={best_t:.6f} (train F1={best_f1:.4f})')
-
-    cohort = identity.copy()
+    cohort = batch.identifiers.copy()
     cohort['label'] = labels.values
     cohort['y_true'] = y_true
     cohort['phase2_split'] = split
     cohort['anomaly_score'] = scores
-    cohort['y2_alert'] = alert
+    cohort['y2_alert'] = alerts
 
-    # report Phase 2 quality on val/test
     print('\nPhase 2 packet performance (alerts):')
-    for part in ['val', 'test']:
-        m = cohort['phase2_split'] == part
-        sub = cohort[m]
-        tp = int(((sub.y2_alert == 1) & (sub.y_true == 1)).sum())
-        fp = int(((sub.y2_alert == 1) & (sub.y_true == 0)).sum())
-        fn = int(((sub.y2_alert == 0) & (sub.y_true == 1)).sum())
-        n_alert = int((sub.y2_alert == 1).sum())
-        rec = tp / (tp + fn) if (tp + fn) else 0
-        prec = tp / (tp + fp) if (tp + fp) else 0
-        print(f'  {part}: packets={len(sub):,} alerts={n_alert:,} TP={tp:,} FP={fp:,} '
-              f'recall={rec:.3f} precision={prec:.3f}')
+    for part in ('val', 'test'):
+        subset = cohort[cohort['phase2_split'] == part]
+        tp = int(((subset.y2_alert == 1) & (subset.y_true == 1)).sum())
+        fp = int(((subset.y2_alert == 1) & (subset.y_true == 0)).sum())
+        fn = int(((subset.y2_alert == 0) & (subset.y_true == 1)).sum())
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        print(
+            f'  {part}: packets={len(subset):,} '
+            f'alerts={int((subset.y2_alert == 1).sum()):,} '
+            f'TP={tp:,} FP={fp:,} recall={recall:.3f} '
+            f'precision={precision:.3f}'
+        )
 
-    os.makedirs(DATA_DIR, exist_ok=True)
-    cohort.to_parquet(os.path.join(DATA_DIR, 'phase2_cohort.parquet'))
-    print(f'\nSaved Phase 2 cohort -> {os.path.join(DATA_DIR, "phase2_cohort.parquet")}')
-    print('Next: cascade_alignment.py (maps val/test alerts to the unified-flow index '
-          'and runs the leakage guard).')
+    destination = Path(
+        output_path or os.path.join(DATA_DIR, 'phase2_cohort.parquet')
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    cohort.to_parquet(destination)
+    print(f'\nSaved Phase 2 cohort -> {destination}')
+    print(
+        'Next: cascade_alignment.py maps val/test alerts to the '
+        'unified-flow index and runs the leakage guard.'
+    )
+    return cohort
+
+
+def build_parser():
+    """Build command-line options for packet cohort generation."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run behavioral packet preprocessing and the finalized Autoencoder."
+        )
+    )
+    parser.add_argument('--packet-dir', default=PACKET_DIR)
+    parser.add_argument(
+        '--output', default=os.path.join(DATA_DIR, 'phase2_cohort.parquet')
+    )
+    parser.add_argument('--seed', type=int, default=SEED)
+    parser.add_argument('--preprocessor', default='behavioral_packet')
+    parser.add_argument('--detector', default='autoencoder')
+    parser.add_argument('--benign-target', type=int, default=BENIGN_TARGET)
+    parser.add_argument(
+        '--attack-target-per-type', type=int, default=ATTACK_TARGET_PER_TYPE
+    )
+    parser.add_argument(
+        '--hidden-dims', type=int, nargs='+', default=[128, 64, 32]
+    )
+    parser.add_argument('--epochs', type=int, default=20)
+    parser.add_argument('--batch-size', type=int, default=256)
+    parser.add_argument('--learning-rate', type=float, default=1e-3)
+    parser.add_argument('--weight-decay', type=float, default=1e-5)
+    parser.add_argument('--validation-fraction', type=float, default=0.1)
+    return parser
+
+
+def main():
+    """Run the packet cohort stage from the command line."""
+    args = build_parser().parse_args()
+    build_phase2_cohort(
+        packet_dir=args.packet_dir,
+        output_path=args.output,
+        seed=args.seed,
+        benign_target=args.benign_target,
+        attack_target_per_type=args.attack_target_per_type,
+        preprocessor_name=args.preprocessor,
+        detector_name=args.detector,
+        autoencoder_config=AutoencoderConfig(
+            hidden_dims=tuple(args.hidden_dims),
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            validation_fraction=args.validation_fraction,
+        ),
+    )
 
 
 if __name__ == '__main__':
