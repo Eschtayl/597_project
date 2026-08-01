@@ -1,10 +1,18 @@
-"""Integrity checks for the sampler + splits.
+"""Integrity checks for the unified-flow sampler + splits.
 
-Builds the sampled dataset (or loads the cache), applies both split protocols,
-and verifies sampling proportions, group-safety, stratification, and per-fold
-class support. Prints PASS/FAIL.
+Gate #3 in the Phase 3 run order. Builds the ~204k-flow sample (or loads the
+parquet cache), applies both split protocols, and verifies:
 
-Usage: python phase_3/check_sampling.py [--rebuild]
+- benign / attack counts within the configured ranges
+- all five attack types present and roughly balanced
+- group-safety (each LogicalFlowID in exactly one primary-split partition)
+- stratification and per-fold class support for temporal folds
+
+Pass ``--rebuild`` to ignore the cache and redraw the sample.
+
+Must PASS before feature checks or modelling. See ``phase_3/README.md``.
+
+Usage: ``python phase_3/check_sampling.py [--rebuild]``
 """
 import sys
 

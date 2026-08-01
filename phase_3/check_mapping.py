@@ -1,11 +1,18 @@
-"""Packet -> logical-flow mapping-quality report.
+"""Packet → logical-flow mapping quality report.
 
-Builds a canonical-key index from a representative set of flow captures, maps a
-sample of packets from the corresponding packet captures, and reports match /
-ambiguity / no-match / invalid rates plus the required verifications. Writes to
-phase_3/mapping_quality_report.txt and stdout, then STOPS for review.
+Gate #2 in the Phase 3 run order. Builds a canonical-key index from a
+representative set of flow captures, maps a sample of packets from the
+matching packet captures, and reports:
 
-Usage: python phase_3/check_mapping.py [n_packets_per_capture]
+- match / ambiguity / no-match / invalid rates (overall + per attack type)
+- direction-symmetry and protocol-in-key verifications
+
+This is a *quality* report for the mapper, not the cascade itself. Cascade
+alignment against the full flow index happens later in
+``cascade_alignment.py``. Writes ``mapping_quality_report.txt`` and stops for
+review.
+
+Usage: ``python phase_3/check_mapping.py [n_packets_per_capture]``
 """
 import os
 import sys

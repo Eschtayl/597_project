@@ -1,8 +1,15 @@
-"""Integrity + leakage tests for LogicalFlowID construction and aggregation. 
-Runs on real flow captures and prints PASS/FAIL.
+"""Integrity tests for LogicalFlowID construction and segment aggregation.
 
-Usage:  python phase_3/check_aggregation.py [file1.csv file2.csv ...]
-Defaults to the benign + DNS captures (benign holds the 278-segment flow).
+Gate #1 in the Phase 3 run order. Runs ~10 checks on real flow captures
+(single-segment identity, gap-based clustering, sum/min/max/wmean consistency,
+no silent NaN inflation, etc.) and prints PASS/FAIL.
+
+Defaults to the benign + DNS captures (benign holds the 278-segment contiguous
+flow that motivated gap-based clustering). Pass explicit CSV paths to override.
+
+Must PASS before sampling or modelling. See ``phase_3/README.md``.
+
+Usage: ``python phase_3/check_aggregation.py [file1.csv file2.csv ...]``
 """
 import os
 import sys

@@ -1,23 +1,29 @@
 """Leakage-clean head retrain + candidate-flow scoring.
 
-If the leakage guard failed (cascade candidate flows overlap Phase 3 train/val):
-  * keep the LOCKED hyperparameters (no re-tuning),
-  * remove every cascade-val/test candidate flow from Phase 3 train (and test
-    candidates from Phase 3 val),
-  * resample same-label replacements from the full unified-flow pool (excluding
-    all candidate flows and the existing sample), preserving split assignments,
-  * retrain the four heads (MC/BIN x behaviour/service) on the cleaned sample.
+Runs after ``cascade_alignment.py``. If the leakage guard failed (cascade
+candidate flows overlap Phase 3 train/val) — which is the expected case when
+the modelling sample was drawn independently of the Phase 2 cohort — this
+script remediates **without re-tuning**:
 
-Heads are saved WITH their fitted preprocessors (the originals discarded them),
-then every candidate flow reachable from a val/test alert is scored by all four
-heads.
+1. Keep the locked hyperparameters from ``data/xgb_results.json``.
+2. Remove every cascade-val/test candidate flow from Phase 3 train (and test
+   candidates from Phase 3 val).
+3. Resample same-label replacements from the full unified-flow pool (excluding
+   all candidate flows and the existing sample), preserving split assignments
+   so train/val/test sizes stay comparable.
+4. Retrain the four heads (MC/BIN × behaviour/service) on the cleaned sample.
 
-Outputs:
-  phase_3/data/models/head_{mc,bin}_{behaviour,service}_cascade.joblib
-  phase_3/data/cascade_candidate_scores.parquet
-  phase_3/cascade_heads_report.txt
+Heads are saved **with** their fitted preprocessors (``heads.py`` discarded
+them), then every candidate flow reachable from a val/test alert is scored by
+all four heads for ``cascade_eval.py``.
 
-Usage: python phase_3/cascade_heads.py
+Outputs
+-------
+- ``data/models/head_{mc,bin}_{behaviour,service}_cascade.joblib``
+- ``data/cascade_candidate_scores.parquet``
+- ``cascade_heads_report.txt``
+
+Usage: ``python phase_3/cascade_heads.py``
 """
 import os
 import sys
@@ -58,9 +64,19 @@ def emit(s=''):
 # Cleaned sample construction
 # ---------------------------------------------------------------------------
 def build_clean_sample(sampled, diag, cand_val, cand_test, unified):
-    """Remove leaking flows from train/val, resample same-label replacements from
-    the unified pool (excluding every candidate + existing sample), preserving the
-    original split labels. Returns (new_sampled, split_by_lfid, summary)."""
+    """Remove leaking flows and resample same-label replacements.
+
+    Leak definition (matches the guard in ``cascade_alignment``):
+
+    - A flow in Phase 3 **train** that is reachable from any val/test alert.
+    - A flow in Phase 3 **val** that is reachable from a test alert.
+
+    Replacements are drawn from the full unified pool excluding every cascade
+    candidate and the existing sample, preserving each removed row's original
+    split label so partition sizes stay comparable.
+
+    Returns ``(new_sampled, split_by_lfid, summary)``.
+    """
     orig_split = dict(zip(diag['LogicalFlowID'], diag['split']))
     all_cands = cand_val | cand_test
 
@@ -78,8 +94,8 @@ def build_clean_sample(sampled, diag, cand_val, cand_test, unified):
          f'(train: {int((splits[leak_mask]=="train").sum()):,}, '
          f'val: {int((splits[leak_mask]=="val").sum()):,})')
 
-    # replacement pool: same label, not already sampled, not any cascade candidate
-    # (selected per label to avoid materialising a near-full copy of `unified`)
+    # Replacement pool: same label, not already sampled, not any cascade candidate.
+    # Selected per (label, split) to avoid materialising a near-full copy of unified.
     sample_lfids = set(sampled['LogicalFlowID'])
     excluded = ~unified['LogicalFlowID'].isin(sample_lfids | all_cands)
 

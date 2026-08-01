@@ -1,11 +1,21 @@
-"""Baseline models: Dummy (most_frequent + stratified),
-Logistic Regression, and Random Forest on both the behaviour-only and
-service-aware feature variants.
+"""Baseline models for the supervised flow classifier.
 
-Fit on TRAIN, report on VALIDATION only. The test split is never read here.
-No threshold tuning, no cascade — those come after XGBoost + model selection.
+Trains Dummy (most_frequent + stratified), Logistic Regression, and Random
+Forest on **both** the behaviour-only and service-aware feature variants.
 
-Usage: python phase_3/baselines.py
+Protocol
+--------
+- Fit on TRAIN, report on VALIDATION only. Test stays sealed.
+- No threshold tuning and no cascade here — those come after XGBoost + the
+  weighting bake-off + head selection.
+- Preprocessing is train-only (``baselines.preprocess`` is reused by later
+  scripts so every model sees the same transform).
+
+Purpose: establish a floor (Dummy) and classical ML reference points before
+investing in XGBoost. Service-vs-behaviour deltas are reported but no winner
+is selected yet.
+
+Usage: ``python phase_3/baselines.py``
 """
 import os
 import sys
@@ -38,7 +48,11 @@ def emit(s=''):
 
 
 def preprocess(data, variant, model_kind):
-    """Fit preprocessing on TRAIN only; return (Xtr, Xval, feature_names)."""
+    """Fit preprocessing on TRAIN only; return ``(Xtr, Xval, feature_names)``.
+
+    ``model_kind`` is ``'linear'`` (scale numerics) or ``'tree'`` (leave raw).
+    Reused by ``xgboost_model``, ``weighting_comparison``, and ``heads``.
+    """
     num, cat = numeric_categorical_cols(variant)
     X = clean_frame(data['X_behaviour'] if variant == 'behaviour' else data['X_service'])
     tr, va = data['split'] == 'train', data['split'] == 'val'

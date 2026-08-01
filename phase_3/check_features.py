@@ -1,10 +1,17 @@
 """Feature-builder verification + manifests.
 
-Builds behaviour-only and service-aware datasets from the cached sample, fits
-train-only preprocessing, runs the 10 required leakage/consistency checks, and
-saves feature manifests + the feature reason table. No model is trained here.
+Gate #4 in the Phase 3 run order. Builds behaviour-only and service-aware
+datasets from the cached sample, fits train-only preprocessing, and runs the
+required leakage / consistency checks (forbidden columns absent, no exact
+ports, diagnostics excluded, train-only impute/scale, etc.).
 
-Usage: python phase_3/check_features.py
+Also writes feature manifests and the feature-reason table used in the report.
+No model is trained here — this only certifies that the matrices are safe to
+feed into baselines / XGBoost.
+
+Must PASS before modelling. See ``phase_3/README.md``.
+
+Usage: ``python phase_3/check_features.py``
 """
 import os
 import sys

@@ -1,20 +1,28 @@
-"""Cascade alert->flow alignment + mandatory leakage guard.
+"""Cascade alert→flow alignment + mandatory leakage guard.
 
-Implements the LOCKED packet-centric protocol:
+Bridges Phase 2 packet alerts to Phase 3 flow scores. Implements the locked
+**packet-centric** protocol:
 
-  Phase 2 val/test packets -> keep flagged (alert) packets
-    -> map each alert against the FULL unified-flow index (NOT the 204k sample)
-    -> preserve the full candidate LogicalFlowID list per packet (Policy B needs it)
-    -> classify mapping status, with invalid_key split into subcategories
-    -> leakage guard: candidate flows reachable from val AND test alerts must not
-       intersect Phase 3 train (and test candidates must not intersect Phase 3 val)
+1. Take Phase 2 val/test packets that were flagged (``y2_alert == 1``).
+2. Map each alert against the **full** unified-flow index (~986k flows), not
+   the 204k modelling sample — otherwise no-match rates explode.
+3. Preserve the full candidate ``LogicalFlowID`` list per packet (Policy B
+   needs every candidate, not just a representative).
+4. Classify mapping status; split ``invalid_key`` into subcategories
+   (missing endpoint / zero port / unsupported protocol).
+5. **Leakage guard:** candidate flows reachable from val/test alerts must not
+   intersect Phase 3 train (and test candidates must not intersect Phase 3
+   val). A FAIL here is expected when the sample was drawn independently —
+   ``cascade_heads.py`` remediates by removing + resampling.
 
-Outputs:
-  phase_3/data/unified_flows_full.parquet   (cached full unified-flow frame)
-  phase_3/data/cascade_alignment.parquet    (one row per val/test alert packet)
-  phase_3/data/cascade_leakage.json         (guard verdict + overlap LFID lists)
+Outputs
+-------
+- ``data/unified_flows_full.parquet`` — cached full unified-flow frame
+- ``data/cascade_alignment.parquet`` — one row per val/test alert packet
+- ``data/cascade_leakage.json`` — guard verdict + overlapping LFID lists
+- ``cascade_alignment_report.txt`` — human-readable coverage + guard report
 
-Usage: python phase_3/cascade_alignment.py
+Usage: ``python phase_3/cascade_alignment.py``
 """
 import os
 import sys
@@ -37,7 +45,8 @@ UNIFIED_FULL_PATH = os.path.join(DATA_DIR, 'unified_flows_full.parquet')
 ALIGNMENT_PATH = os.path.join(DATA_DIR, 'cascade_alignment.parquet')
 LEAKAGE_PATH = os.path.join(DATA_DIR, 'cascade_leakage.json')
 COHORT_PATH = os.path.join(DATA_DIR, 'phase2_cohort.parquet')
-CAND_SEP = ';;'   # LogicalFlowID contains '|' and '#', so use a distinct separator
+# LogicalFlowID already contains '|' and '#', so join candidates with something else.
+CAND_SEP = ';;'
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -50,6 +59,7 @@ def emit(s=''):
 
 
 def load_or_build_unified():
+    """Return the full unified-flow frame, building + caching on first run."""
     if os.path.exists(UNIFIED_FULL_PATH):
         emit(f'Loading cached full unified flows: {UNIFIED_FULL_PATH}')
         return pd.read_parquet(UNIFIED_FULL_PATH)
@@ -62,7 +72,11 @@ def load_or_build_unified():
 
 
 def build_candidate_index(unified):
-    """canonical_key -> candidate stats + full LogicalFlowID list (CAND_SEP-joined)."""
+    """Index ``canonical_key → {n_candidates, n_labels, n_captures, candidates}``.
+
+    ``candidates`` is the full ``CAND_SEP``-joined LogicalFlowID list so Policy B
+    can score every member of a multi-match set.
+    """
     key, valid = canonical_key(unified['Src IP'], unified['Src Port'],
                                unified['Dst IP'], unified['Dst Port'], unified['Protocol'])
     flows = unified.loc[valid, ['LogicalFlowID', LABEL_COL, 'source_file']].copy()
@@ -80,8 +94,11 @@ def build_candidate_index(unified):
 
 
 def classify_alert_packets(alerts, index):
-    """Attach canonical key, mapping status (+ invalid subcategory), candidate
-    stats and the full candidate list to each alert packet row."""
+    """Attach key, status (+ invalid subcategory), and full candidate list.
+
+    Status priority: conflicting labels > same-label cross-capture > same-capture
+    reuse > unique > no-match; invalid keys override everything.
+    """
     p = alerts.copy().reset_index(drop=True)
     proto = packet_protocol(p['l4_tcp'], p['l4_udp'])
 
@@ -106,6 +123,7 @@ def classify_alert_packets(alerts, index):
     status[multi & (joined['n_labels'] == 1) & (joined['n_captures'] == 1)] = MULTI_SAME_CAPTURE
     status[~valid] = INVALID_KEY
 
+    # Subcategories help the report explain *why* a key was unusable.
     invalid_reason = pd.Series('', index=p.index, dtype=object)
     invalid_reason[~valid & unsupported_protocol] = 'unsupported_protocol'
     invalid_reason[~valid & zero_port] = 'zero_port'

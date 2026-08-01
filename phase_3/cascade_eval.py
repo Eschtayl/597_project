@@ -1,19 +1,35 @@
 """Cascade threshold selection, Policy A/B bake-off, and sealed test evaluation.
 
-Selection (Phase 2 VALIDATION alerts only):
-  for each head (MC/BIN x behaviour/service) x policy (A strict / B same-capture
-  consensus): sweep tau, keep configs with TP-retention >= RETENTION_FLOOR, pick
-  max FP-reduction. The winning (head, policy, tau) is FROZEN, then the Phase 2
-  TEST alerts are evaluated exactly once.
+This is the final scoring script for the two-stage IDS. It does **not** train
+models — it consumes candidate-flow scores from ``cascade_heads.py`` and the
+alert→flow alignment from ``cascade_alignment.py``.
 
-Cascade rule: y_cascade = y_phase2 AND y_phase3 — alerts can only be suppressed.
-  Policy A: only unique_match consults the flow score; all else retains.
-  Policy B: additionally, multiple_same_capture suppresses only when EVERY
-            candidate flow scores benign (max candidate score < tau).
+Selection protocol (Phase 2 VALIDATION alerts only)
+---------------------------------------------------
+For each head (MC/BIN × behaviour/service) × policy (A / B):
 
-Outputs: phase_3/cascade_report.txt, phase_3/data/cascade_results.json
+1. Build a per-alert decision score ``s`` (NaN ⇒ fallback retain).
+2. Sweep candidate thresholds ``τ`` over the unique finite scores.
+3. Keep configs with TP-retention ≥ ``RETENTION_FLOOR`` (95 %).
+4. Among feasible configs, pick max FP-reduction (tie-break: higher retention).
 
-Usage: python phase_3/cascade_eval.py
+The winning ``(head, policy, τ)`` is **frozen**, then Phase 2 TEST alerts are
+evaluated exactly once. Test is never touched during the sweep.
+
+Cascade rule
+------------
+``ŷ_cascade = ŷ_phase2 ∧ ŷ_phase3`` — alerts can only be suppressed, never added.
+
+- **Policy A:** only ``unique_match`` consults the flow score; all else retains.
+- **Policy B:** also uses ``multiple_same_capture``; suppresses only when EVERY
+  candidate flow looks benign (``max(candidate scores) < τ``).
+
+Headline metrics: FP-reduction %, TP-retention %, precision lift, recall
+ceiling check, bootstrap CIs, McNemar, per-class retention, port-slice FP cut.
+
+Outputs: ``cascade_report.txt``, ``data/cascade_results.json``
+
+Usage: ``python phase_3/cascade_eval.py``
 """
 import os
 import sys
@@ -30,10 +46,10 @@ from cascade_heads import SCORES_PATH
 
 COHORT_PATH = os.path.join(DATA_DIR, 'phase2_cohort.parquet')
 RESULTS_PATH = os.path.join(DATA_DIR, 'cascade_results.json')
-RETENTION_FLOOR = 0.95
+RETENTION_FLOOR = 0.95          # min TP-retention required on val before a τ is eligible
 HEADS = ['s_mc_behaviour', 's_bin_behaviour', 's_mc_service', 's_bin_service']
 POLICIES = ['A', 'B']
-SERVICE_PORTS = {80, 8080, 443, 53}
+SERVICE_PORTS = {80, 8080, 443, 53}   # used only for the benign port-slice breakdown
 N_BOOT = 1000
 
 try:
@@ -50,10 +66,29 @@ def emit(s=''):
 # Per-alert decision scores
 # ---------------------------------------------------------------------------
 def alert_scores(aligned, flow_scores, head, policy):
-    """Return (s, usable, decision_flow) arrays for the alert frame.
-    s = decision score (NaN when the alert falls back to retain);
-    usable = mapping status consulted under this policy;
-    decision_flow = LogicalFlowID whose score decides (argmax for Policy B)."""
+    """Build per-alert decision scores under one (head, policy) pair.
+
+    Parameters
+    ----------
+    aligned : DataFrame
+        One row per Phase 2 alert (from ``cascade_alignment.parquet``).
+    flow_scores : DataFrame
+        Candidate-flow scores (from ``cascade_candidate_scores.parquet``).
+    head : str
+        Score column name, e.g. ``'s_mc_service'``.
+    policy : ``'A'`` or ``'B'``
+
+    Returns
+    -------
+    s : ndarray
+        Decision score per alert. ``NaN`` means "fallback retain" (no usable
+        mapping / missing prediction).
+    usable : ndarray of bool
+        True when this policy consulted a flow score for that alert.
+    decision_flow : ndarray
+        ``LogicalFlowID`` whose score decided (the max-scoring candidate under
+        Policy B; the sole candidate under Policy A unique matches).
+    """
     score_by_lfid = dict(zip(flow_scores['LogicalFlowID'], flow_scores[head]))
     s = np.full(len(aligned), np.nan)
     usable = np.zeros(len(aligned), dtype=bool)
@@ -63,11 +98,15 @@ def alert_scores(aligned, flow_scores, head, policy):
     cands = aligned['candidates'].to_numpy()
     for i in range(len(aligned)):
         st = statuses[i]
+        # Policy A: unique only. Policy B: unique OR same-capture multi.
         if st == UNIQUE_MATCH or (policy == 'B' and st == MULTI_SAME_CAPTURE):
             lst = cands[i].split(CAND_SEP) if cands[i] else []
             vals = [(score_by_lfid.get(l), l) for l in lst]
             if any(v is None or not np.isfinite(v) for v, _ in vals) or not vals:
-                continue   # missing prediction -> retain (fallback)
+                continue   # missing prediction → retain (conservative fallback)
+            # For multi-candidate (Policy B): decide on the *most attack-like*
+            # candidate. Suppressing then requires even that max to be < τ,
+            # i.e. every candidate looks benign.
             v, l = max(vals)
             s[i] = v
             usable[i] = True
@@ -76,11 +115,21 @@ def alert_scores(aligned, flow_scores, head, policy):
 
 
 def cascade_keep(s, tau):
-    """Alert kept (still an alert) unless a usable score falls below tau."""
+    """Return a boolean keep-mask: True = alert survives into the cascade output.
+
+    An alert is suppressed only when its decision score is finite **and**
+    strictly below ``tau``. NaN scores (fallback) always keep the alert.
+    """
     return ~(np.isfinite(s) & (s < tau))
 
 
 def cascade_metrics(y, keep, phase2_fn):
+    """Compute FP-reduction, TP-retention, precision/recall vs Phase 2.
+
+    ``phase2_fn`` is the count of attack packets Phase 2 missed in this split
+    (needed so cascade recall is measured against the same denominator and the
+    recall ceiling ``recall_cascade ≤ recall_phase2`` can be checked).
+    """
     tp_alerts, fp_alerts = int((y == 1).sum()), int((y == 0).sum())
     kept_tp = int((keep & (y == 1)).sum())
     kept_fp = int((keep & (y == 0)).sum())
@@ -100,8 +149,13 @@ def cascade_metrics(y, keep, phase2_fn):
 
 
 def select_threshold(y, s, floor=RETENTION_FLOOR):
-    """Max FP-reduction subject to TP-retention >= floor. Returns (tau, metrics)
-    or (None, None) if no tau is feasible (then tau=-inf: keep everything)."""
+    """Pick τ that maximises FP-reduction subject to TP-retention ≥ floor.
+
+    Returns ``(tau, fp_reduction, tp_retention)`` or ``None`` if no feasible τ
+    exists (caller then treats the config as "keep everything").
+    Candidate thresholds are the unique finite scores themselves (each distinct
+    operating point the ranking can produce).
+    """
     taus = np.unique(s[np.isfinite(s)])
     best = None
     for tau in taus:
@@ -171,10 +225,12 @@ def bootstrap_ci(y, s, tau, n_boot=N_BOOT, seed=23):
 
 # ---------------------------------------------------------------------------
 def main():
+    # Inputs from upstream cascade scripts (must already exist).
     aligned_all = pd.read_parquet(ALIGNMENT_PATH)
     flow_scores = pd.read_parquet(SCORES_PATH)
     cohort = pd.read_parquet(COHORT_PATH)
 
+    # Phase 2 false negatives per split — needed for the recall-ceiling check.
     fn_by_split = {p: int(((cohort['phase2_split'] == p) & (cohort['y2_alert'] == 0)
                            & (cohort['y_true'] == 1)).sum()) for p in ['val', 'test']}
 
@@ -184,7 +240,7 @@ def main():
     y_test = test['y_true'].to_numpy()
 
     # ------------------------------------------------------------------
-    # Bake-off on VALIDATION alerts
+    # Step 1: bake-off on VALIDATION alerts only (test untouched)
     # ------------------------------------------------------------------
     emit('=== Cascade bake-off on Phase 2 VALIDATION alerts '
          f'(n={len(val):,}; TP={int((y_val==1).sum())}, FP={int((y_val==0).sum())}; '
@@ -207,6 +263,7 @@ def main():
     bake = pd.DataFrame(rows).sort_values('fp_reduction', ascending=False).reset_index(drop=True)
     emit(bake.to_string(index=False))
 
+    # Freeze the top feasible (head, policy, τ); this is never revisited.
     winner = bake.iloc[0]
     frozen = {'head': winner['head'], 'policy': winner['policy'], 'tau': float(winner['tau']),
               'retention_floor': RETENTION_FLOOR,
@@ -216,13 +273,13 @@ def main():
          f'tau={frozen["tau"]:.6f} (val FP-reduction {frozen["val_fp_reduction"]:.1%} '
          f'@ TP-retention {frozen["val_tp_retention"]:.1%})')
 
-    # validation metrics for the frozen config (full view)
+    # Validation metrics for the frozen config (full alert set, including fallbacks).
     s_val, usable_val, _ = alert_scores(val, flow_scores, frozen['head'], frozen['policy'])
     keep_val = cascade_keep(s_val, frozen['tau'])
     m_val = cascade_metrics(y_val, keep_val, fn_by_split['val'])
 
     # ------------------------------------------------------------------
-    # SEALED TEST — evaluated exactly once with the frozen config
+    # Step 2: SEALED TEST — evaluated exactly once with the frozen config
     # ------------------------------------------------------------------
     emit('\n=== SEALED TEST evaluation (frozen config, single run) ===')
     s_te, usable_te, dflow_te = alert_scores(test, flow_scores, frozen['head'], frozen['policy'])

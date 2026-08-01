@@ -1,19 +1,24 @@
 """Ablation ladder + computational overhead.
 
-New runs (validation only, test sealed; original sample + split, so rows are
-comparable with baselines.py / xgboost_model.py):
-  * XGB MC, locked unweighted params, behaviour WITHOUT engineered features
-  * XGB MC, locked unweighted params, behaviour (with engineered)
-  * XGB MC, locked unweighted params, service-aware
+Answers two report questions:
 
-Ladder table assembled from cached results:
-  Dummy -> LR -> RF -> XGB(-engineered) -> XGB(behaviour) -> XGB(service)
-  -> threshold-tuned final cascade (test numbers from cascade_results.json).
+1. **What did each modelling step buy?** Assembles a progression ladder
+   Dummy → LR → RF → XGB(−engineered) → XGB(behaviour) → XGB(service) →
+   final cascade, mixing new validation runs with cached baseline / cascade
+   results so rows stay comparable.
+2. **How expensive is Phase 3 at inference?** Times the frozen cascade head
+   (preprocessor transform + predict) on the candidate-flow set.
 
-Computational overhead: throughput of the frozen cascade head (preprocessor
-transform + predict) on the candidate-flow set -> ms per Phase 2 alert.
+New runs (validation only, test sealed; original sample + split):
 
-Usage: python phase_3/ablations.py
+- XGB MC, locked unweighted params, behaviour **without** engineered features
+- XGB MC, locked unweighted params, behaviour (with engineered)
+- XGB MC, locked unweighted params, service-aware
+
+Requires prior artifacts from ``baselines.py``, ``xgboost_model.py``, and
+``cascade_eval.py``.
+
+Usage: ``python phase_3/ablations.py``
 """
 import os
 import sys
